@@ -191,7 +191,7 @@ bool FileTinderExecutor::move_to_trash(const QString& file_path) {
 #ifdef Q_OS_WIN
     // Windows: Use SHFileOperation
     QString native_path = QDir::toNativeSeparators(file_path);
-    native_path.append(QChar(0)); // Double null-terminated
+    native_path.append(QChar(0)).append(QChar(0)); // Double null-terminated as required by API
     
     SHFILEOPSTRUCTW op;
     memset(&op, 0, sizeof(op));

@@ -214,7 +214,7 @@ void StandaloneFileTinderDialog::scan_files() {
         file.name = info.fileName();
         file.extension = info.suffix().toLower();
         file.size = info.size();
-        file.modified_date = info.lastModified().toString("MMM d, yyyy hh:mm");
+        file.modified_date = info.lastModified().toString("MMM d, yyyy HH:mm");
         file.decision = "pending";
         
         files_.push_back(file);

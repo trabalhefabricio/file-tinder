@@ -61,11 +61,10 @@ void FolderNodeWidget::set_virtual(bool is_virtual) {
 }
 
 void FolderNodeWidget::set_scale(qreal scale) {
-    if (qFuzzyCompare(scale_, scale)) {
-        return;
+    if (!qFuzzyCompare(scale_, scale)) {
+        scale_ = scale;
+        update();
     }
-    scale_ = scale;
-    update();
 }
 
 QPoint FolderNodeWidget::center_point() const {

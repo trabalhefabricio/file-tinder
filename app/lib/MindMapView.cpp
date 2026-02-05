@@ -142,13 +142,13 @@ void FolderNodeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, Q
         QRectF exp_rect(rect.width() - 22, rect.height() / 2 - 8, 16, 16);
         painter->drawEllipse(exp_rect);
         
-        painter->setPen(QPen(bg_color.darker(120), 2));
-        if (is_expanded_) {
-            painter->drawLine(exp_rect.center() + QPointF(-4, 0),
-                            exp_rect.center() + QPointF(4, 0));
-        } else {
-            painter->drawLine(exp_rect.center() + QPointF(-4, 0),
-                            exp_rect.center() + QPointF(4, 0));
+        QPen indicator_pen(bg_color.darker(120), 2);
+        painter->setPen(indicator_pen);
+        // Draw horizontal line for both states (the minus part)
+        painter->drawLine(exp_rect.center() + QPointF(-4, 0),
+                        exp_rect.center() + QPointF(4, 0));
+        // Add vertical line only when collapsed to form a plus sign
+        if (!is_expanded_) {
             painter->drawLine(exp_rect.center() + QPointF(0, -4),
                             exp_rect.center() + QPointF(0, 4));
         }
