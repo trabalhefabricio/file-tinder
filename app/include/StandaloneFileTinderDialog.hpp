@@ -11,7 +11,6 @@
 #include <QComboBox>
 #include <QString>
 #include <QStringList>
-#include <QSet>
 #include <vector>
 #include <memory>
 
@@ -96,7 +95,6 @@ protected:
     void apply_filter(FileFilterType filter);
     void rebuild_filtered_indices();
     bool file_matches_filter(const FileToProcess& file) const;
-    QSet<QString> get_file_type_extensions(FileFilterType filter) const;
     
     // File display
     void show_current_file();

@@ -50,9 +50,7 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     }
 }
 
-StandaloneFileTinderDialog::~StandaloneFileTinderDialog() {
-    delete swipe_animation_;
-}
+StandaloneFileTinderDialog::~StandaloneFileTinderDialog() = default;
 
 void StandaloneFileTinderDialog::setup_ui() {
     auto* main_layout = new QVBoxLayout(this);
@@ -907,42 +905,23 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
     }
 }
 
-QSet<QString> StandaloneFileTinderDialog::get_file_type_extensions(FileFilterType filter) const {
-    QSet<QString> extensions;
-    
-    switch (filter) {
-        case FileFilterType::Images:
-            extensions = {"jpg", "jpeg", "png", "gif", "bmp", "svg", "webp", "ico", "tiff"};
-            break;
-        case FileFilterType::Videos:
-            extensions = {"mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v"};
-            break;
-        case FileFilterType::Audio:
-            extensions = {"mp3", "wav", "flac", "aac", "ogg", "wma", "m4a"};
-            break;
-        case FileFilterType::Documents:
-            extensions = {"pdf", "doc", "docx", "txt", "rtf", "odt", "xls", "xlsx", "ppt", "pptx"};
-            break;
-        case FileFilterType::Archives:
-            extensions = {"zip", "rar", "7z", "tar", "gz", "bz2", "xz"};
-            break;
-        default:
-            break;
-    }
-    
-    return extensions;
-}
-
 // Animation implementation
 void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     if (!preview_label_) return;
     
-    // Create fade effect
-    auto* effect = new QGraphicsOpacityEffect(preview_label_);
-    preview_label_->setGraphicsEffect(effect);
+    // Reuse existing effect or create new one
+    auto* effect = qobject_cast<QGraphicsOpacityEffect*>(preview_label_->graphicsEffect());
+    if (!effect) {
+        effect = new QGraphicsOpacityEffect(preview_label_);
+        preview_label_->setGraphicsEffect(effect);
+    }
     
-    delete swipe_animation_;
-    swipe_animation_ = new QPropertyAnimation(effect, "opacity");
+    // Stop any running animation (swipe_animation_ will be deleted by Qt's parent ownership)
+    if (swipe_animation_) {
+        swipe_animation_->stop();
+    }
+    
+    swipe_animation_ = new QPropertyAnimation(effect, "opacity", this);
     swipe_animation_->setDuration(150);
     
     if (forward) {
@@ -955,12 +934,12 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     
     swipe_animation_->setEasingCurve(QEasingCurve::OutQuad);
     
-    connect(swipe_animation_, &QPropertyAnimation::finished, this, [this, effect]() {
+    connect(swipe_animation_, &QPropertyAnimation::finished, this, [effect]() {
         // Reset opacity after animation
         effect->setOpacity(1.0);
     });
     
-    swipe_animation_->start();
+    swipe_animation_->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 // Shortcuts help dialog
