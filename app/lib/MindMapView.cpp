@@ -239,7 +239,7 @@ void ConnectionLineItem::paint(QPainter* painter, const QStyleOptionGraphicsItem
     
     path.cubicTo(ctrl1, ctrl2, end);
     
-    QPen pen(QColor(QString(ui::colors::kConnectionLine)));
+    QPen pen{QColor{QString{ui::colors::kConnectionLine}}};
     pen.setWidth(2);
     pen.setCapStyle(Qt::RoundCap);
     painter->setPen(pen);
