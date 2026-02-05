@@ -130,7 +130,7 @@ bool FileTinderExecutor::move_files(const std::vector<std::pair<QString, QString
                 }
                 if (counter > max_attempts) {
                     result.errors++;
-                    result.error_messages.append(QString("Failed to generate unique name for: %1").arg(dest_path));
+                    result.error_messages.append(QString("Failed to generate unique name for: %1").arg(source));
                     all_success = false;
                     progress++;
                     continue;

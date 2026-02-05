@@ -923,10 +923,10 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         preview_label_->setGraphicsEffect(effect);
     }
     
-    // Stop and delete any running animation before creating a new one
+    // Stop and safely schedule deletion of any running animation
     if (swipe_animation_) {
         swipe_animation_->stop();
-        delete swipe_animation_;
+        swipe_animation_->deleteLater();
         swipe_animation_ = nullptr;
     }
     
