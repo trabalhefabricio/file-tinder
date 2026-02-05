@@ -1,0 +1,71 @@
+#ifndef DATABASE_MANAGER_HPP
+#define DATABASE_MANAGER_HPP
+
+#include <QString>
+#include <QSqlDatabase>
+#include <QSqlQuery>
+#include <QStringList>
+#include <vector>
+#include <memory>
+
+struct FileDecision {
+    QString file_path;
+    QString decision;  // "keep", "delete", "skip", "move"
+    QString destination_folder;
+    qint64 timestamp;
+};
+
+struct FolderTreeEntry {
+    QString folder_path;
+    QString display_name;
+    QString parent_path;
+    bool is_virtual;
+    bool is_pinned;
+    int sort_order;
+};
+
+struct FolderConnection {
+    int group_id;
+    QString folder_path;
+};
+
+class DatabaseManager {
+public:
+    explicit DatabaseManager(const QString& db_path = "");
+    ~DatabaseManager();
+    
+    bool initialize();
+    bool is_open() const;
+    
+    // File Tinder state management
+    bool save_file_decision(const QString& session_folder, const QString& file_path, 
+                           const QString& decision, const QString& destination = "");
+    std::vector<FileDecision> get_session_decisions(const QString& session_folder);
+    bool clear_session(const QString& session_folder);
+    FileDecision get_file_decision(const QString& session_folder, const QString& file_path);
+    
+    // Folder tree management
+    bool save_folder_tree_entry(const QString& session_folder, const FolderTreeEntry& entry);
+    std::vector<FolderTreeEntry> get_folder_tree(const QString& session_folder);
+    bool remove_folder_tree_entry(const QString& session_folder, const QString& folder_path);
+    bool update_folder_pinned(const QString& session_folder, const QString& folder_path, bool pinned);
+    
+    // Folder connections
+    bool add_folder_connection(const QString& session_folder, int group_id, const QString& folder_path);
+    std::vector<FolderConnection> get_folder_connections(const QString& session_folder);
+    bool remove_folder_connection(const QString& session_folder, const QString& folder_path);
+    int get_next_connection_group_id(const QString& session_folder);
+    
+    // Recent folders
+    bool add_recent_folder(const QString& folder_path);
+    QStringList get_recent_folders(int limit = 10);
+    
+private:
+    QSqlDatabase db_;
+    QString db_path_;
+    
+    bool create_tables();
+    bool execute_query(const QString& query);
+};
+
+#endif // DATABASE_MANAGER_HPP

@@ -1,0 +1,8 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/">
+        <file>icons/folder.svg</file>
+        <file>icons/folder-new.svg</file>
+        <file>icons/folder-linked.svg</file>
+    </qresource>
+</RCC>

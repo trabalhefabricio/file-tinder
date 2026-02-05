@@ -1,0 +1,328 @@
+#include "DatabaseManager.hpp"
+#include <QSqlError>
+#include <QSqlRecord>
+#include <QStandardPaths>
+#include <QDir>
+#include <QDateTime>
+#include <QDebug>
+
+DatabaseManager::DatabaseManager(const QString& db_path)
+    : db_path_(db_path) {
+    if (db_path_.isEmpty()) {
+        QString data_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        QDir().mkpath(data_dir);
+        db_path_ = data_dir + "/file_tinder.db";
+    }
+}
+
+DatabaseManager::~DatabaseManager() {
+    if (db_.isOpen()) {
+        db_.close();
+    }
+}
+
+bool DatabaseManager::initialize() {
+    db_ = QSqlDatabase::addDatabase("QSQLITE");
+    db_.setDatabaseName(db_path_);
+    
+    if (!db_.open()) {
+        qWarning() << "Failed to open database:" << db_.lastError().text();
+        return false;
+    }
+    
+    return create_tables();
+}
+
+bool DatabaseManager::is_open() const {
+    return db_.isOpen();
+}
+
+bool DatabaseManager::create_tables() {
+    QStringList queries;
+    
+    // File Tinder state table
+    queries << R"(
+        CREATE TABLE IF NOT EXISTS file_tinder_state (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            folder_path TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            decision TEXT NOT NULL CHECK (decision IN ('pending', 'keep', 'delete', 'skip', 'move')),
+            destination_folder TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(folder_path, file_path)
+        )
+    )";
+    
+    // Folder tree configuration
+    queries << R"(
+        CREATE TABLE IF NOT EXISTS tinder_folder_tree (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            display_name TEXT,
+            is_virtual INTEGER DEFAULT 0,
+            is_pinned INTEGER DEFAULT 0,
+            parent_path TEXT,
+            sort_order INTEGER DEFAULT 0,
+            UNIQUE(session_folder, folder_path)
+        )
+    )";
+    
+    // Folder connections
+    queries << R"(
+        CREATE TABLE IF NOT EXISTS tinder_folder_connections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            group_id INTEGER NOT NULL,
+            folder_path TEXT NOT NULL,
+            UNIQUE(session_folder, folder_path)
+        )
+    )";
+    
+    // Recent folders
+    queries << R"(
+        CREATE TABLE IF NOT EXISTS recent_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            folder_path TEXT NOT NULL UNIQUE,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    )";
+    
+    for (const QString& query : queries) {
+        if (!execute_query(query)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+bool DatabaseManager::execute_query(const QString& query) {
+    QSqlQuery q(db_);
+    if (!q.exec(query)) {
+        qWarning() << "Query failed:" << q.lastError().text();
+        qWarning() << "Query:" << query;
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseManager::save_file_decision(const QString& session_folder, const QString& file_path,
+                                         const QString& decision, const QString& destination) {
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        INSERT OR REPLACE INTO file_tinder_state 
+        (folder_path, file_path, decision, destination_folder, timestamp)
+        VALUES (?, ?, ?, ?, datetime('now'))
+    )");
+    query.addBindValue(session_folder);
+    query.addBindValue(file_path);
+    query.addBindValue(decision);
+    query.addBindValue(destination);
+    
+    if (!query.exec()) {
+        qWarning() << "Failed to save file decision:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+std::vector<FileDecision> DatabaseManager::get_session_decisions(const QString& session_folder) {
+    std::vector<FileDecision> decisions;
+    
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        SELECT file_path, decision, destination_folder, timestamp
+        FROM file_tinder_state
+        WHERE folder_path = ?
+        ORDER BY timestamp
+    )");
+    query.addBindValue(session_folder);
+    
+    if (query.exec()) {
+        while (query.next()) {
+            FileDecision fd;
+            fd.file_path = query.value(0).toString();
+            fd.decision = query.value(1).toString();
+            fd.destination_folder = query.value(2).toString();
+            fd.timestamp = query.value(3).toLongLong();
+            decisions.push_back(fd);
+        }
+    }
+    
+    return decisions;
+}
+
+bool DatabaseManager::clear_session(const QString& session_folder) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM file_tinder_state WHERE folder_path = ?");
+    query.addBindValue(session_folder);
+    return query.exec();
+}
+
+FileDecision DatabaseManager::get_file_decision(const QString& session_folder, const QString& file_path) {
+    FileDecision fd;
+    fd.decision = "pending";
+    
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        SELECT decision, destination_folder, timestamp
+        FROM file_tinder_state
+        WHERE folder_path = ? AND file_path = ?
+    )");
+    query.addBindValue(session_folder);
+    query.addBindValue(file_path);
+    
+    if (query.exec() && query.next()) {
+        fd.file_path = file_path;
+        fd.decision = query.value(0).toString();
+        fd.destination_folder = query.value(1).toString();
+        fd.timestamp = query.value(2).toLongLong();
+    }
+    
+    return fd;
+}
+
+bool DatabaseManager::save_folder_tree_entry(const QString& session_folder, const FolderTreeEntry& entry) {
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        INSERT OR REPLACE INTO tinder_folder_tree
+        (session_folder, folder_path, display_name, is_virtual, is_pinned, parent_path, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    )");
+    query.addBindValue(session_folder);
+    query.addBindValue(entry.folder_path);
+    query.addBindValue(entry.display_name);
+    query.addBindValue(entry.is_virtual ? 1 : 0);
+    query.addBindValue(entry.is_pinned ? 1 : 0);
+    query.addBindValue(entry.parent_path);
+    query.addBindValue(entry.sort_order);
+    
+    if (!query.exec()) {
+        qWarning() << "Failed to save folder tree entry:" << query.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+std::vector<FolderTreeEntry> DatabaseManager::get_folder_tree(const QString& session_folder) {
+    std::vector<FolderTreeEntry> entries;
+    
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        SELECT folder_path, display_name, is_virtual, is_pinned, parent_path, sort_order
+        FROM tinder_folder_tree
+        WHERE session_folder = ?
+        ORDER BY sort_order
+    )");
+    query.addBindValue(session_folder);
+    
+    if (query.exec()) {
+        while (query.next()) {
+            FolderTreeEntry entry;
+            entry.folder_path = query.value(0).toString();
+            entry.display_name = query.value(1).toString();
+            entry.is_virtual = query.value(2).toBool();
+            entry.is_pinned = query.value(3).toBool();
+            entry.parent_path = query.value(4).toString();
+            entry.sort_order = query.value(5).toInt();
+            entries.push_back(entry);
+        }
+    }
+    
+    return entries;
+}
+
+bool DatabaseManager::remove_folder_tree_entry(const QString& session_folder, const QString& folder_path) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM tinder_folder_tree WHERE session_folder = ? AND folder_path = ?");
+    query.addBindValue(session_folder);
+    query.addBindValue(folder_path);
+    return query.exec();
+}
+
+bool DatabaseManager::update_folder_pinned(const QString& session_folder, const QString& folder_path, bool pinned) {
+    QSqlQuery query(db_);
+    query.prepare("UPDATE tinder_folder_tree SET is_pinned = ? WHERE session_folder = ? AND folder_path = ?");
+    query.addBindValue(pinned ? 1 : 0);
+    query.addBindValue(session_folder);
+    query.addBindValue(folder_path);
+    return query.exec();
+}
+
+bool DatabaseManager::add_folder_connection(const QString& session_folder, int group_id, const QString& folder_path) {
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        INSERT OR REPLACE INTO tinder_folder_connections
+        (session_folder, group_id, folder_path)
+        VALUES (?, ?, ?)
+    )");
+    query.addBindValue(session_folder);
+    query.addBindValue(group_id);
+    query.addBindValue(folder_path);
+    return query.exec();
+}
+
+std::vector<FolderConnection> DatabaseManager::get_folder_connections(const QString& session_folder) {
+    std::vector<FolderConnection> connections;
+    
+    QSqlQuery query(db_);
+    query.prepare("SELECT group_id, folder_path FROM tinder_folder_connections WHERE session_folder = ?");
+    query.addBindValue(session_folder);
+    
+    if (query.exec()) {
+        while (query.next()) {
+            FolderConnection conn;
+            conn.group_id = query.value(0).toInt();
+            conn.folder_path = query.value(1).toString();
+            connections.push_back(conn);
+        }
+    }
+    
+    return connections;
+}
+
+bool DatabaseManager::remove_folder_connection(const QString& session_folder, const QString& folder_path) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM tinder_folder_connections WHERE session_folder = ? AND folder_path = ?");
+    query.addBindValue(session_folder);
+    query.addBindValue(folder_path);
+    return query.exec();
+}
+
+int DatabaseManager::get_next_connection_group_id(const QString& session_folder) {
+    QSqlQuery query(db_);
+    query.prepare("SELECT MAX(group_id) FROM tinder_folder_connections WHERE session_folder = ?");
+    query.addBindValue(session_folder);
+    
+    if (query.exec() && query.next()) {
+        return query.value(0).toInt() + 1;
+    }
+    return 1;
+}
+
+bool DatabaseManager::add_recent_folder(const QString& folder_path) {
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        INSERT OR REPLACE INTO recent_folders (folder_path, timestamp)
+        VALUES (?, datetime('now'))
+    )");
+    query.addBindValue(folder_path);
+    return query.exec();
+}
+
+QStringList DatabaseManager::get_recent_folders(int limit) {
+    QStringList folders;
+    
+    QSqlQuery query(db_);
+    query.prepare("SELECT folder_path FROM recent_folders ORDER BY timestamp DESC LIMIT ?");
+    query.addBindValue(limit);
+    
+    if (query.exec()) {
+        while (query.next()) {
+            folders.append(query.value(0).toString());
+        }
+    }
+    
+    return folders;
+}
