@@ -8,13 +8,16 @@
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QListWidget>
-#include <QApplication>
+#include <QComboBox>
 #include <QString>
 #include <QStringList>
+#include <QSet>
 #include <vector>
 #include <memory>
 
 class DatabaseManager;
+class QPropertyAnimation;
+class QGraphicsOpacityEffect;
 
 struct FileToProcess {
     QString path;
@@ -24,6 +27,18 @@ struct FileToProcess {
     QString modified_date;
     QString decision;           // "pending", "keep", "delete", "skip", "move"
     QString destination_folder; // For move operations
+    QString mime_type;          // MIME type for filtering
+};
+
+// File filter types
+enum class FileFilterType {
+    All,
+    Images,
+    Videos,
+    Audio,
+    Documents,
+    Archives,
+    Other
 };
 
 class StandaloneFileTinderDialog : public QDialog {
@@ -38,9 +53,11 @@ public:
 protected:
     // File management
     std::vector<FileToProcess> files_;
-    int current_index_;
+    std::vector<int> filtered_indices_;  // Indices into files_ after filtering
+    int current_filtered_index_;         // Current position in filtered list
     QString source_folder_;
     DatabaseManager& db_;
+    FileFilterType current_filter_;
     
     // Statistics
     int keep_count_;
@@ -54,6 +71,8 @@ protected:
     QLabel* progress_label_;
     QLabel* stats_label_;
     QProgressBar* progress_bar_;
+    QComboBox* filter_combo_;
+    QLabel* shortcuts_label_;
     
     QPushButton* back_btn_;
     QPushButton* delete_btn_;
@@ -62,6 +81,10 @@ protected:
     QPushButton* move_btn_;
     QPushButton* finish_btn_;
     QPushButton* switch_mode_btn_;
+    QPushButton* help_btn_;
+    
+    // Animation
+    QPropertyAnimation* swipe_animation_;
     
     // Initialization
     virtual void setup_ui();
@@ -69,12 +92,21 @@ protected:
     void load_session_state();
     void save_session_state();
     
+    // Filtering
+    void apply_filter(FileFilterType filter);
+    void rebuild_filtered_indices();
+    bool file_matches_filter(const FileToProcess& file) const;
+    QSet<QString> get_file_type_extensions(FileFilterType filter) const;
+    
     // File display
     void show_current_file();
     void update_preview(const QString& file_path);
     void update_file_info(const FileToProcess& file);
     void update_progress();
     void update_stats();
+    
+    // Animation
+    void animate_swipe(bool forward);
     
     // Actions
     virtual void on_keep();
@@ -86,12 +118,19 @@ protected:
     void advance_to_next();
     void go_to_previous();
     
+    // Helper to update decision counts (deduplication)
+    void update_decision_count(const QString& old_decision, int delta);
+    int get_current_file_index() const;  // Get actual file index from filtered index
+    
     // Folder picker
     QString show_folder_picker();
     
     // Review screen
     void show_review_summary();
     void execute_decisions();
+    
+    // Help
+    void show_shortcuts_help();
     
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;
@@ -103,6 +142,7 @@ signals:
     
 protected slots:
     void on_switch_mode_clicked();
+    void on_filter_changed(int index);
 };
 
 #endif // STANDALONE_FILE_TINDER_DIALOG_HPP

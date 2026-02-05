@@ -357,20 +357,16 @@ void AdvancedFileTinderDialog::setup_advanced_buttons() {
 
 void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     // Move current file to this folder
-    if (current_index_ < 0 || current_index_ >= static_cast<int>(files_.size())) return;
+    int file_idx = get_current_file_index();
+    if (file_idx < 0) return;
     
-    auto& file = files_[current_index_];
+    auto& file = files_[file_idx];
     
-    // Update counts
+    // Update counts using helper method
     if (file.decision != "pending") {
-        if (file.decision == "keep") keep_count_--;
-        else if (file.decision == "delete") delete_count_--;
-        else if (file.decision == "skip") skip_count_--;
-        else if (file.decision == "move") {
-            move_count_--;
-            if (!file.destination_folder.isEmpty()) {
-                folder_model_->unassign_file_from_folder(file.destination_folder);
-            }
+        update_decision_count(file.decision, -1);
+        if (file.decision == "move" && !file.destination_folder.isEmpty()) {
+            folder_model_->unassign_file_from_folder(file.destination_folder);
         }
     }
     
@@ -384,6 +380,7 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     db_.add_recent_folder(folder_path);
     update_quick_access();
     
+    animate_swipe(true);
     advance_to_next();
 }
 
