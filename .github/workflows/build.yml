@@ -22,7 +22,6 @@ jobs:
       uses: jurplel/install-qt-action@v4
       with:
         version: '6.6.*'
-        modules: 'qtbase'
     
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -48,7 +47,6 @@ jobs:
       uses: jurplel/install-qt-action@v4
       with:
         version: '6.6.*'
-        modules: 'qtbase'
     
     - name: Configure CMake
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -74,7 +72,6 @@ jobs:
       uses: jurplel/install-qt-action@v4
       with:
         version: '6.6.*'
-        modules: 'qtbase'
         arch: 'win64_msvc2019_64'
     
     - name: Configure CMake
