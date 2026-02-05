@@ -49,6 +49,10 @@ public:
                                          QWidget* parent = nullptr);
     ~StandaloneFileTinderDialog() override;
     
+    // Initialize the dialog - must be called after construction
+    // This allows derived classes to properly initialize before UI setup
+    virtual void initialize();
+    
 protected:
     // File management
     std::vector<FileToProcess> files_;

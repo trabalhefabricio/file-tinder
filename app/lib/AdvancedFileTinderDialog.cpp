@@ -31,11 +31,15 @@ AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
     setMinimumSize(ui::dimensions::kAdvancedFileTinderMinWidth,
                    ui::dimensions::kAdvancedFileTinderMinHeight);
     
-    // Re-setup UI for advanced mode
-    // (We call this after parent constructor sets up basic UI)
+    // Note: initialize() should be called after construction to complete setup
 }
 
 AdvancedFileTinderDialog::~AdvancedFileTinderDialog() = default;
+
+void AdvancedFileTinderDialog::initialize() {
+    // Call base class initialize which will call our overridden setup_ui()
+    StandaloneFileTinderDialog::initialize();
+}
 
 void AdvancedFileTinderDialog::setup_ui() {
     // Clear existing layout if any

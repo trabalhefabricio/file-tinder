@@ -18,6 +18,9 @@ public:
                                        QWidget* parent = nullptr);
     ~AdvancedFileTinderDialog() override;
     
+    // Override initialize to set up advanced mode properly
+    void initialize() override;
+    
 private:
     // Advanced mode components
     QSplitter* main_splitter_;

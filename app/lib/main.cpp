@@ -152,6 +152,7 @@ private:
         }
         
         auto* dialog = new StandaloneFileTinderDialog(selected_folder_, db_, this);
+        dialog->initialize();  // Initialize after construction
         
         connect(dialog, &StandaloneFileTinderDialog::switch_to_advanced_mode, this, [this, dialog]() {
             dialog->close();
@@ -178,6 +179,7 @@ private:
         }
         
         auto* dialog = new AdvancedFileTinderDialog(selected_folder_, db_, this);
+        dialog->initialize();  // Initialize after construction
         
         connect(dialog, &AdvancedFileTinderDialog::switch_to_basic_mode, this, [this, dialog]() {
             dialog->close();

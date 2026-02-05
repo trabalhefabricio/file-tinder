@@ -28,9 +28,7 @@ FolderNodeWidget::FolderNodeWidget(const QString& folder_path, const QString& di
     hover_animation_->setEasingCurve(QEasingCurve::OutCubic);
 }
 
-FolderNodeWidget::~FolderNodeWidget() {
-    delete hover_animation_;
-}
+FolderNodeWidget::~FolderNodeWidget() = default;
 
 void FolderNodeWidget::set_selected(bool selected) {
     if (is_selected_ != selected) {

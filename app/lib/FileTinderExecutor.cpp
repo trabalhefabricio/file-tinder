@@ -97,9 +97,9 @@ bool FileTinderExecutor::move_files(const std::vector<std::pair<QString, QString
         
         QString dest_path = dest;
         
-        // If dest is a directory, append the source filename
+        // If dest is an existing directory or ends with separator, treat as directory
         QFileInfo dest_info(dest);
-        if (dest_info.isDir() || !dest.contains('.')) {
+        if (dest_info.isDir() || dest.endsWith('/') || dest.endsWith('\\')) {
             QDir dest_dir(dest);
             if (!dest_dir.exists()) {
                 dest_dir.mkpath(".");
@@ -112,15 +112,28 @@ bool FileTinderExecutor::move_files(const std::vector<std::pair<QString, QString
             if (overwrite_existing_) {
                 QFile::remove(dest_path);
             } else {
-                // Generate unique name
+                // Generate unique name with max attempts to prevent infinite loop
                 QString base = QFileInfo(dest_path).completeBaseName();
                 QString ext = QFileInfo(dest_path).suffix();
                 QString dir_path = QFileInfo(dest_path).absolutePath();
                 int counter = 1;
-                while (QFile::exists(dest_path)) {
-                    dest_path = QString("%1/%2_%3.%4")
-                        .arg(dir_path, base, QString::number(counter), ext);
+                const int max_attempts = 10000;
+                while (QFile::exists(dest_path) && counter <= max_attempts) {
+                    if (ext.isEmpty()) {
+                        dest_path = QString("%1/%2_%3")
+                            .arg(dir_path, base, QString::number(counter));
+                    } else {
+                        dest_path = QString("%1/%2_%3.%4")
+                            .arg(dir_path, base, QString::number(counter), ext);
+                    }
                     counter++;
+                }
+                if (counter > max_attempts) {
+                    result.errors++;
+                    result.error_messages.append(QString("Failed to generate unique name for: %1").arg(dest_path));
+                    all_success = false;
+                    progress++;
+                    continue;
                 }
             }
         }
@@ -228,12 +241,23 @@ bool FileTinderExecutor::move_to_trash(const QString& file_path) {
     }
     
     QString dest = trash_dir.absoluteFilePath(QFileInfo(file_path).fileName());
+    QString base = QFileInfo(file_path).completeBaseName();
+    QString ext = QFileInfo(file_path).suffix();
     int counter = 1;
-    while (QFile::exists(dest)) {
-        QString base = QFileInfo(file_path).completeBaseName();
-        QString ext = QFileInfo(file_path).suffix();
-        dest = trash_dir.absoluteFilePath(QString("%1_%2.%3").arg(base, QString::number(counter), ext));
+    const int max_attempts = 10000;
+    while (QFile::exists(dest) && counter <= max_attempts) {
+        QString candidate_name;
+        if (ext.isEmpty()) {
+            candidate_name = QString("%1_%2").arg(base, QString::number(counter));
+        } else {
+            candidate_name = QString("%1_%2.%3").arg(base, QString::number(counter), ext);
+        }
+        dest = trash_dir.absoluteFilePath(candidate_name);
         counter++;
+    }
+    
+    if (counter > max_attempts) {
+        return false;  // Failed to generate unique name
     }
     
     return QFile::rename(file_path, dest);

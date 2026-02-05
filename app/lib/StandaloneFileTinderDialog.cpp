@@ -40,6 +40,13 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     setMinimumSize(ui::dimensions::kStandaloneFileTinderMinWidth,
                    ui::dimensions::kStandaloneFileTinderMinHeight);
     
+    // Don't call setup_ui() here - it's virtual and could cause issues
+    // with derived classes. Call initialize() after construction instead.
+}
+
+StandaloneFileTinderDialog::~StandaloneFileTinderDialog() = default;
+
+void StandaloneFileTinderDialog::initialize() {
     setup_ui();
     scan_files();
     rebuild_filtered_indices();
@@ -49,8 +56,6 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
         show_current_file();
     }
 }
-
-StandaloneFileTinderDialog::~StandaloneFileTinderDialog() = default;
 
 void StandaloneFileTinderDialog::setup_ui() {
     auto* main_layout = new QVBoxLayout(this);
@@ -898,6 +903,8 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
                    !mime.startsWith("text/") &&
                    !mime.contains("pdf") &&
                    !mime.contains("document") &&
+                   !mime.contains("spreadsheet") &&
+                   !mime.contains("presentation") &&
                    !mime.contains("zip") &&
                    !mime.contains("archive");
         default:
@@ -916,9 +923,11 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         preview_label_->setGraphicsEffect(effect);
     }
     
-    // Stop any running animation (swipe_animation_ will be deleted by Qt's parent ownership)
+    // Stop and delete any running animation before creating a new one
     if (swipe_animation_) {
         swipe_animation_->stop();
+        delete swipe_animation_;
+        swipe_animation_ = nullptr;
     }
     
     swipe_animation_ = new QPropertyAnimation(effect, "opacity", this);
@@ -969,7 +978,8 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 </table>
 <br>
 <b>Filters:</b><br>
-1 = All | 2 = Images | 3 = Videos | 4 = Audio | 5 = Documents | 6 = Archives
+1 = All | 2 = Images | 3 = Videos | 4 = Audio | 5 = Documents | 6 = Archives<br>
+(Use the dropdown to select 'Other' filter)
 )";
     
     help_dialog.setTextFormat(Qt::RichText);
