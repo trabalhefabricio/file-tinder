@@ -1343,6 +1343,8 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
                    !mime.contains("document") &&
                    !mime.contains("spreadsheet") &&
                    !mime.contains("presentation") &&
+                   !mime.contains("spreadsheet") &&
+                   !mime.contains("presentation") &&
                    !mime.contains("zip") &&
                    !mime.contains("archive");
         case FileFilterType::FoldersOnly:
