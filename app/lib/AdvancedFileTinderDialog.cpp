@@ -1,6 +1,7 @@
 #include "AdvancedFileTinderDialog.hpp"
 #include "FolderTreeModel.hpp"
 #include "MindMapView.hpp"
+#include "FilterWidget.hpp"
 #include "DatabaseManager.hpp"
 #include "FileTinderExecutor.hpp"
 #include "ui_constants.hpp"
@@ -11,33 +12,36 @@
 #include <QMessageBox>
 #include <QToolButton>
 #include <QProgressDialog>
-#include <QTableWidget>
-#include <QHeaderView>
 #include <QGroupBox>
-#include <QToolBar>
+#include <QScrollArea>
 #include <QDir>
+#include <QMimeDatabase>
+#include <QSettings>
 
 AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
                                                    DatabaseManager& db,
                                                    QWidget* parent)
     : StandaloneFileTinderDialog(source_folder, db, parent)
-    , main_splitter_(nullptr)
-    , folder_panel_(nullptr)
+    , scroll_area_(nullptr)
+    , main_content_(nullptr)
     , mind_map_view_(nullptr)
+    , file_info_panel_(nullptr)
+    , file_icon_label_(nullptr)
+    , file_name_label_(nullptr)
+    , file_details_label_(nullptr)
+    , quick_access_panel_(nullptr)
     , quick_access_list_(nullptr)
+    , filter_widget_(nullptr)
     , folder_model_(nullptr) {
     
     setWindowTitle("File Tinder - Advanced Mode");
     setMinimumSize(ui::dimensions::kAdvancedFileTinderMinWidth,
                    ui::dimensions::kAdvancedFileTinderMinHeight);
-    
-    // Note: initialize() should be called after construction to complete setup
 }
 
 AdvancedFileTinderDialog::~AdvancedFileTinderDialog() = default;
 
 void AdvancedFileTinderDialog::initialize() {
-    // Call base class initialize which will call our overridden setup_ui()
     StandaloneFileTinderDialog::initialize();
 }
 
@@ -54,319 +58,267 @@ void AdvancedFileTinderDialog::setup_ui() {
     
     auto* main_layout = new QVBoxLayout(this);
     main_layout->setContentsMargins(10, 10, 10, 10);
-    main_layout->setSpacing(10);
+    main_layout->setSpacing(8);
     
-    // Title with mode toggle
+    // Title bar with mode switch in upper right
     auto* title_bar = new QWidget();
     auto* title_layout = new QHBoxLayout(title_bar);
     title_layout->setContentsMargins(0, 0, 0, 0);
     
-    auto* title_label = new QLabel("📁 FILE TINDER - Advanced Mode");
-    title_label->setStyleSheet(QString(
-        "font-size: %1px; font-weight: bold; color: %2;"
-    ).arg(ui::fonts::kHeaderSize).arg(ui::colors::kNodeVirtualBg));
+    auto* title_label = new QLabel("File Tinder - Advanced Mode");
+    title_label->setStyleSheet("font-size: 16px; font-weight: bold;");
     title_layout->addWidget(title_label);
     
     title_layout->addStretch();
     
-    switch_mode_btn_ = new QPushButton("🔄 Basic Mode");
+    // Zoom controls
+    auto* zoom_out_btn = new QToolButton();
+    zoom_out_btn->setText("-");
+    zoom_out_btn->setToolTip("Zoom Out");
+    connect(zoom_out_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_out);
+    title_layout->addWidget(zoom_out_btn);
+    
+    auto* zoom_in_btn = new QToolButton();
+    zoom_in_btn->setText("+");
+    zoom_in_btn->setToolTip("Zoom In");
+    connect(zoom_in_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_in);
+    title_layout->addWidget(zoom_in_btn);
+    
+    auto* zoom_fit_btn = new QToolButton();
+    zoom_fit_btn->setText("Fit");
+    zoom_fit_btn->setToolTip("Fit to View");
+    connect(zoom_fit_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_fit);
+    title_layout->addWidget(zoom_fit_btn);
+    
+    title_layout->addSpacing(20);
+    
+    switch_mode_btn_ = new QPushButton("Basic Mode");
     switch_mode_btn_->setStyleSheet(
-        "QPushButton { padding: 5px 10px; background-color: #3498db; "
+        "QPushButton { padding: 5px 15px; background-color: #3498db; "
         "border-radius: 4px; color: white; }"
         "QPushButton:hover { background-color: #2980b9; }"
     );
     connect(switch_mode_btn_, &QPushButton::clicked, this, [this]() {
         save_folder_tree();
+        save_quick_access();
         emit switch_to_basic_mode();
     });
     title_layout->addWidget(switch_mode_btn_);
     
     main_layout->addWidget(title_bar);
     
-    // Main splitter: preview | folder tree
-    main_splitter_ = new QSplitter(Qt::Horizontal);
+    // Filter bar (same as Basic Mode)
+    setup_filter_bar();
     
-    // Left side: File preview panel
-    auto* preview_panel = new QWidget();
-    auto* preview_layout = new QVBoxLayout(preview_panel);
-    preview_layout->setContentsMargins(5, 5, 5, 5);
+    // Mind Map (main focus - no file preview)
+    setup_mind_map();
     
-    // Preview area
-    auto* preview_group = new QGroupBox("File Preview");
-    preview_group->setStyleSheet("QGroupBox { font-weight: bold; }");
-    auto* preview_inner_layout = new QVBoxLayout(preview_group);
+    // File info panel below mind map
+    setup_file_info_panel();
     
-    preview_label_ = new QLabel();
-    preview_label_->setMinimumSize(400, 350);
-    preview_label_->setAlignment(Qt::AlignCenter);
-    preview_label_->setStyleSheet(
-        "background-color: #2c3e50; border-radius: 8px; padding: 10px;"
-    );
-    preview_inner_layout->addWidget(preview_label_);
+    // Quick Access panel (manual add/remove, 1-0 shortcuts)
+    setup_quick_access_panel();
     
-    file_info_label_ = new QLabel();
-    file_info_label_->setAlignment(Qt::AlignCenter);
-    file_info_label_->setStyleSheet("color: #7f8c8d; padding: 5px;");
-    preview_inner_layout->addWidget(file_info_label_);
+    // Action buttons at bottom
+    setup_action_buttons();
     
-    preview_layout->addWidget(preview_group, 1);
-    
-    // Progress
-    auto* progress_widget = new QWidget();
-    auto* progress_layout = new QVBoxLayout(progress_widget);
-    progress_layout->setContentsMargins(0, 0, 0, 0);
-    
-    progress_bar_ = new QProgressBar();
-    progress_bar_->setTextVisible(true);
-    progress_bar_->setStyleSheet(
-        "QProgressBar { border: 2px solid #34495e; border-radius: 5px; text-align: center; }"
-        "QProgressBar::chunk { background-color: #9b59b6; }"
-    );
-    progress_layout->addWidget(progress_bar_);
-    
-    progress_label_ = new QLabel();
-    progress_label_->setAlignment(Qt::AlignCenter);
-    progress_layout->addWidget(progress_label_);
-    
-    preview_layout->addWidget(progress_widget);
-    
-    // Stats
-    stats_label_ = new QLabel();
-    stats_label_->setAlignment(Qt::AlignCenter);
-    stats_label_->setStyleSheet(
-        "font-size: 12px; padding: 8px; background-color: #34495e; border-radius: 5px;"
-    );
-    preview_layout->addWidget(stats_label_);
-    
-    // Basic action buttons
-    auto* action_btns = new QWidget();
-    auto* action_layout = new QHBoxLayout(action_btns);
-    action_layout->setSpacing(8);
-    
-    delete_btn_ = new QPushButton("← Delete");
-    delete_btn_->setMinimumSize(80, 40);
-    delete_btn_->setStyleSheet(QString(
-        "QPushButton { font-weight: bold; padding: 8px; "
-        "background-color: %1; border-radius: 6px; color: white; }"
-        "QPushButton:hover { background-color: #c0392b; }"
-    ).arg(ui::colors::kDeleteColor));
-    connect(delete_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_delete);
-    action_layout->addWidget(delete_btn_);
-    
-    skip_btn_ = new QPushButton("↓ Skip");
-    skip_btn_->setMinimumSize(80, 40);
-    skip_btn_->setStyleSheet(QString(
-        "QPushButton { font-weight: bold; padding: 8px; "
-        "background-color: %1; border-radius: 6px; color: white; }"
-        "QPushButton:hover { background-color: #e67e22; }"
-    ).arg(ui::colors::kSkipColor));
-    connect(skip_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_skip);
-    action_layout->addWidget(skip_btn_);
-    
-    back_btn_ = new QPushButton("↑ Back");
-    back_btn_->setMinimumSize(80, 40);
-    back_btn_->setStyleSheet(
-        "QPushButton { font-weight: bold; padding: 8px; "
-        "background-color: #95a5a6; border-radius: 6px; }"
-        "QPushButton:hover { background-color: #7f8c8d; }"
-    );
-    connect(back_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_back);
-    action_layout->addWidget(back_btn_);
-    
-    preview_layout->addWidget(action_btns);
-    
-    main_splitter_->addWidget(preview_panel);
-    
-    // Right side: Folder tree panel
-    setup_folder_panel();
-    main_splitter_->addWidget(folder_panel_);
-    
-    // Set splitter sizes
-    main_splitter_->setSizes({500, 600});
-    main_splitter_->setStretchFactor(0, 1);
-    main_splitter_->setStretchFactor(1, 2);
-    
-    main_layout->addWidget(main_splitter_, 1);
-    
-    // Quick access bar
-    setup_quick_access_bar();
-    
-    // Bottom buttons
-    setup_advanced_buttons();
-    
-    // Initialize folder model and view
+    // Initialize folder model
     folder_model_ = new FolderTreeModel(this);
     folder_model_->set_root_folder(source_folder_);
     mind_map_view_->set_model(folder_model_);
     
-    // Load saved folder tree
+    // Load saved data
     load_folder_tree();
+    load_quick_access();
     
-    // Update progress
+    // Initialize display
     if (!files_.empty()) {
-        progress_bar_->setMaximum(static_cast<int>(files_.size()));
         show_current_file();
     }
-    
-    update_quick_access();
-    update_stats();
 }
 
-void AdvancedFileTinderDialog::setup_folder_panel() {
-    folder_panel_ = new QWidget();
-    auto* panel_layout = new QVBoxLayout(folder_panel_);
-    panel_layout->setContentsMargins(5, 5, 5, 5);
-    panel_layout->setSpacing(8);
+void AdvancedFileTinderDialog::setup_filter_bar() {
+    filter_widget_ = new FilterWidget(this);
+    connect(filter_widget_, &FilterWidget::filter_changed, this, &AdvancedFileTinderDialog::on_filter_changed);
+    connect(filter_widget_, &FilterWidget::sort_changed, this, &AdvancedFileTinderDialog::on_sort_changed);
+    static_cast<QVBoxLayout*>(layout())->addWidget(filter_widget_);
+}
+
+void AdvancedFileTinderDialog::setup_mind_map() {
+    auto* map_group = new QGroupBox("Destination Folders");
+    map_group->setStyleSheet("QGroupBox { font-weight: bold; }");
+    auto* map_layout = new QVBoxLayout(map_group);
+    map_layout->setContentsMargins(5, 15, 5, 5);
     
-    // Header with title and toolbar
-    auto* header = new QWidget();
-    auto* header_layout = new QHBoxLayout(header);
-    header_layout->setContentsMargins(0, 0, 0, 0);
-    
-    auto* tree_label = new QLabel("📂 Destination Folders (Mind Map View)");
-    tree_label->setStyleSheet("font-weight: bold; font-size: 14px;");
-    header_layout->addWidget(tree_label);
-    
-    header_layout->addStretch();
-    
-    // Zoom controls
-    auto* zoom_in_btn = new QToolButton();
-    zoom_in_btn->setText("+");
-    zoom_in_btn->setToolTip("Zoom In (Ctrl+Scroll)");
-    zoom_in_btn->setStyleSheet("QToolButton { font-weight: bold; padding: 4px 8px; }");
-    connect(zoom_in_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_in);
-    header_layout->addWidget(zoom_in_btn);
-    
-    auto* zoom_out_btn = new QToolButton();
-    zoom_out_btn->setText("-");
-    zoom_out_btn->setToolTip("Zoom Out");
-    zoom_out_btn->setStyleSheet("QToolButton { font-weight: bold; padding: 4px 8px; }");
-    connect(zoom_out_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_out);
-    header_layout->addWidget(zoom_out_btn);
-    
-    auto* zoom_fit_btn = new QToolButton();
-    zoom_fit_btn->setText("⊡");
-    zoom_fit_btn->setToolTip("Fit to View");
-    zoom_fit_btn->setStyleSheet("QToolButton { font-weight: bold; padding: 4px 8px; }");
-    connect(zoom_fit_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_fit);
-    header_layout->addWidget(zoom_fit_btn);
-    
-    panel_layout->addWidget(header);
-    
-    // Mind map view
     mind_map_view_ = new MindMapView();
-    mind_map_view_->setMinimumSize(ui::dimensions::kFolderTreePanelMinWidth, 400);
+    mind_map_view_->setMinimumHeight(350);
+    mind_map_view_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     
     connect(mind_map_view_, &MindMapView::folder_clicked, 
             this, &AdvancedFileTinderDialog::on_folder_clicked);
-    connect(mind_map_view_, &MindMapView::folder_double_clicked,
-            this, &AdvancedFileTinderDialog::on_folder_double_clicked);
     connect(mind_map_view_, &MindMapView::folder_context_menu,
             this, &AdvancedFileTinderDialog::on_folder_context_menu);
     connect(mind_map_view_, &MindMapView::add_folder_requested,
-            this, &AdvancedFileTinderDialog::on_add_folder);
+            this, &AdvancedFileTinderDialog::on_add_node_clicked);
     
-    panel_layout->addWidget(mind_map_view_, 1);
+    map_layout->addWidget(mind_map_view_);
     
-    // Folder actions
-    auto* folder_actions = new QWidget();
-    auto* folder_actions_layout = new QHBoxLayout(folder_actions);
-    folder_actions_layout->setContentsMargins(0, 0, 0, 0);
+    // Hint label
+    auto* hint = new QLabel("Click folder to assign file. Click [+] to add destination. Right-click for options.");
+    hint->setStyleSheet("color: #666; font-size: 10px;");
+    map_layout->addWidget(hint);
     
-    auto* add_folder_btn = new QPushButton("+ Add Folder");
-    add_folder_btn->setStyleSheet(
-        "QPushButton { padding: 6px 12px; background-color: #27ae60; "
-        "border-radius: 4px; color: white; }"
-        "QPushButton:hover { background-color: #2ecc71; }"
-    );
-    connect(add_folder_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_add_folder);
-    folder_actions_layout->addWidget(add_folder_btn);
-    
-    auto* add_subfolder_btn = new QPushButton("+ Add Subfolder");
-    add_subfolder_btn->setStyleSheet(
-        "QPushButton { padding: 6px 12px; background-color: #3498db; "
-        "border-radius: 4px; color: white; }"
-        "QPushButton:hover { background-color: #2980b9; }"
-    );
-    connect(add_subfolder_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_add_subfolder);
-    folder_actions_layout->addWidget(add_subfolder_btn);
-    
-    folder_actions_layout->addStretch();
-    
-    panel_layout->addWidget(folder_actions);
-    
-    // Instruction label
-    auto* hint_label = new QLabel(
-        "💡 Click a folder node to move the current file there.\n"
-        "   Ctrl+Scroll to zoom. Middle-click to pan."
-    );
-    hint_label->setStyleSheet("color: #7f8c8d; font-size: 11px; padding: 5px;");
-    panel_layout->addWidget(hint_label);
+    static_cast<QVBoxLayout*>(layout())->addWidget(map_group, 1);
 }
 
-void AdvancedFileTinderDialog::setup_quick_access_bar() {
-    auto* quick_group = new QGroupBox("⭐ Quick Access");
-    quick_group->setStyleSheet("QGroupBox { font-weight: bold; }");
-    quick_group->setMaximumHeight(ui::dimensions::kQuickAccessBarHeight + 30);
+void AdvancedFileTinderDialog::setup_file_info_panel() {
+    file_info_panel_ = new QWidget();
+    file_info_panel_->setStyleSheet("background-color: #f5f5f5; border-radius: 4px; padding: 8px;");
+    auto* info_layout = new QHBoxLayout(file_info_panel_);
+    info_layout->setContentsMargins(10, 8, 10, 8);
     
-    auto* quick_layout = new QHBoxLayout(quick_group);
+    // File type icon
+    file_icon_label_ = new QLabel("[FILE]");
+    file_icon_label_->setStyleSheet("font-size: 18px; font-weight: bold; color: #333; min-width: 60px;");
+    file_icon_label_->setAlignment(Qt::AlignCenter);
+    info_layout->addWidget(file_icon_label_);
+    
+    // File name and details
+    auto* text_widget = new QWidget();
+    auto* text_layout = new QVBoxLayout(text_widget);
+    text_layout->setContentsMargins(0, 0, 0, 0);
+    text_layout->setSpacing(2);
+    
+    file_name_label_ = new QLabel("No file selected");
+    file_name_label_->setStyleSheet("font-size: 14px; font-weight: bold;");
+    text_layout->addWidget(file_name_label_);
+    
+    file_details_label_ = new QLabel("");
+    file_details_label_->setStyleSheet("font-size: 11px; color: #666;");
+    text_layout->addWidget(file_details_label_);
+    
+    info_layout->addWidget(text_widget, 1);
+    
+    // Progress
+    progress_bar_ = new QProgressBar();
+    progress_bar_->setMaximumWidth(150);
+    progress_bar_->setTextVisible(true);
+    info_layout->addWidget(progress_bar_);
+    
+    static_cast<QVBoxLayout*>(layout())->addWidget(file_info_panel_);
+}
+
+void AdvancedFileTinderDialog::setup_quick_access_panel() {
+    quick_access_panel_ = new QWidget();
+    auto* qa_layout = new QHBoxLayout(quick_access_panel_);
+    qa_layout->setContentsMargins(0, 0, 0, 0);
+    
+    auto* qa_label = new QLabel("Quick Access (1-0):");
+    qa_label->setStyleSheet("font-weight: bold;");
+    qa_layout->addWidget(qa_label);
     
     quick_access_list_ = new QListWidget();
     quick_access_list_->setFlow(QListView::LeftToRight);
-    quick_access_list_->setMaximumHeight(ui::dimensions::kQuickAccessBarHeight);
+    quick_access_list_->setMaximumHeight(40);
     quick_access_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     quick_access_list_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     quick_access_list_->setStyleSheet(
-        "QListWidget { background-color: #34495e; border-radius: 6px; }"
-        "QListWidget::item { padding: 8px 15px; margin: 3px; background-color: #3498db; "
-        "border-radius: 4px; color: white; }"
-        "QListWidget::item:hover { background-color: #2980b9; }"
-        "QListWidget::item:selected { background-color: #27ae60; }"
+        "QListWidget { background: transparent; border: none; }"
+        "QListWidget::item { padding: 4px 10px; background: #eee; border-radius: 3px; margin-right: 4px; }"
+        "QListWidget::item:hover { background: #ddd; }"
+        "QListWidget::item:selected { background: #0078d4; color: white; }"
     );
-    
     connect(quick_access_list_, &QListWidget::itemClicked,
             this, &AdvancedFileTinderDialog::on_quick_access_clicked);
+    qa_layout->addWidget(quick_access_list_, 1);
     
-    quick_layout->addWidget(quick_access_list_);
+    auto* add_qa_btn = new QPushButton("+");
+    add_qa_btn->setMaximumWidth(30);
+    add_qa_btn->setToolTip("Add folder to Quick Access");
+    connect(add_qa_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_add_quick_access);
+    qa_layout->addWidget(add_qa_btn);
     
-    static_cast<QVBoxLayout*>(layout())->addWidget(quick_group);
+    auto* remove_qa_btn = new QPushButton("-");
+    remove_qa_btn->setMaximumWidth(30);
+    remove_qa_btn->setToolTip("Remove selected from Quick Access");
+    connect(remove_qa_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_remove_quick_access);
+    qa_layout->addWidget(remove_qa_btn);
+    
+    static_cast<QVBoxLayout*>(layout())->addWidget(quick_access_panel_);
 }
 
-void AdvancedFileTinderDialog::setup_advanced_buttons() {
-    auto* bottom_btns = new QWidget();
-    auto* btn_layout = new QHBoxLayout(bottom_btns);
+void AdvancedFileTinderDialog::setup_action_buttons() {
+    // Action buttons (thin, full width)
+    auto* action_widget = new QWidget();
+    auto* action_layout = new QHBoxLayout(action_widget);
+    action_layout->setSpacing(8);
     
-    auto* cancel_btn = new QPushButton("Cancel Session");
-    cancel_btn->setStyleSheet(
-        "QPushButton { padding: 8px 16px; background-color: #95a5a6; "
-        "border-radius: 5px; }"
+    delete_btn_ = new QPushButton("Delete [<-]");
+    delete_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    delete_btn_->setStyleSheet(QString(
+        "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
+        "QPushButton:hover { background-color: #c0392b; }"
+    ).arg(ui::colors::kDeleteColor));
+    connect(delete_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_delete);
+    action_layout->addWidget(delete_btn_, 1);
+    
+    skip_btn_ = new QPushButton("Skip [Down]");
+    skip_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    skip_btn_->setStyleSheet(QString(
+        "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
+        "QPushButton:hover { background-color: #e67e22; }"
+    ).arg(ui::colors::kSkipColor));
+    connect(skip_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_skip);
+    action_layout->addWidget(skip_btn_, 1);
+    
+    back_btn_ = new QPushButton("Back [Up]");
+    back_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    back_btn_->setStyleSheet(
+        "QPushButton { background-color: #95a5a6; color: white; font-weight: bold; border-radius: 4px; }"
         "QPushButton:hover { background-color: #7f8c8d; }"
     );
+    connect(back_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_back);
+    action_layout->addWidget(back_btn_, 1);
+    
+    static_cast<QVBoxLayout*>(layout())->addWidget(action_widget);
+    
+    // Bottom bar with Cancel and Finish
+    auto* bottom_widget = new QWidget();
+    auto* bottom_layout = new QHBoxLayout(bottom_widget);
+    
+    auto* cancel_btn = new QPushButton("Cancel");
+    cancel_btn->setStyleSheet("QPushButton { padding: 8px 16px; }");
     connect(cancel_btn, &QPushButton::clicked, this, &QDialog::reject);
-    btn_layout->addWidget(cancel_btn);
+    bottom_layout->addWidget(cancel_btn);
     
-    btn_layout->addStretch();
+    bottom_layout->addStretch();
     
-    finish_btn_ = new QPushButton("✓ Execute All Moves");
+    // Stats
+    stats_label_ = new QLabel();
+    stats_label_->setStyleSheet("color: #666;");
+    bottom_layout->addWidget(stats_label_);
+    
+    bottom_layout->addStretch();
+    
+    finish_btn_ = new QPushButton("Finish & Execute");
     finish_btn_->setStyleSheet(
-        "QPushButton { padding: 10px 25px; background-color: #2ecc71; "
-        "border-radius: 5px; color: white; font-weight: bold; font-size: 14px; }"
-        "QPushButton:hover { background-color: #27ae60; }"
+        "QPushButton { padding: 10px 25px; background-color: #27ae60; "
+        "color: white; font-weight: bold; border-radius: 4px; }"
+        "QPushButton:hover { background-color: #2ecc71; }"
     );
     connect(finish_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_finish);
-    btn_layout->addWidget(finish_btn_);
+    bottom_layout->addWidget(finish_btn_);
     
-    static_cast<QVBoxLayout*>(layout())->addWidget(bottom_btns);
+    static_cast<QVBoxLayout*>(layout())->addWidget(bottom_widget);
 }
 
 void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
-    // Move current file to this folder
     int file_idx = get_current_file_index();
     if (file_idx < 0) return;
     
     auto& file = files_[file_idx];
     
-    // Update counts using helper method
+    // Update counts
     if (file.decision != "pending") {
         update_decision_count(file.decision, -1);
         if (file.decision == "move" && !file.destination_folder.isEmpty()) {
@@ -381,41 +333,55 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     folder_model_->assign_file_to_folder(folder_path);
     mind_map_view_->set_selected_folder(folder_path);
     
-    db_.add_recent_folder(folder_path);
-    update_quick_access();
-    
-    animate_swipe(true);
     advance_to_next();
 }
 
-void AdvancedFileTinderDialog::on_folder_double_clicked(const QString& folder_path) {
-    // Toggle expand/collapse could be implemented
-    Q_UNUSED(folder_path);
-    mind_map_view_->refresh_layout();
+void AdvancedFileTinderDialog::on_add_node_clicked() {
+    prompt_add_folder();
+}
+
+void AdvancedFileTinderDialog::prompt_add_folder() {
+    QMenu menu;
+    
+    menu.addAction("Create New Folder...", [this]() {
+        bool ok;
+        QString name = QInputDialog::getText(this, "New Folder",
+            "Enter folder name:", QLineEdit::Normal, "", &ok);
+        if (ok && !name.isEmpty()) {
+            QString new_path = source_folder_ + "/" + name;
+            folder_model_->add_folder(new_path, true);  // Virtual folder
+            mind_map_view_->refresh_layout();
+        }
+    });
+    
+    menu.addAction("Add Existing Folder...", [this]() {
+        QString folder = QFileDialog::getExistingDirectory(this, "Select Folder", source_folder_);
+        if (!folder.isEmpty()) {
+            folder_model_->add_folder(folder, false);  // Existing folder
+            mind_map_view_->refresh_layout();
+        }
+    });
+    
+    menu.exec(QCursor::pos());
 }
 
 void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path, const QPoint& pos) {
     QMenu menu;
     
-    menu.addAction("📁 Move File Here", [this, folder_path]() {
+    menu.addAction("Move File Here", [this, folder_path]() {
         on_folder_clicked(folder_path);
     });
     
     menu.addSeparator();
     
-    menu.addAction("⭐ Pin to Quick Access", [this, folder_path]() {
-        folder_model_->set_folder_pinned(folder_path, true);
-        FolderTreeEntry entry;
-        entry.folder_path = folder_path;
-        entry.is_pinned = true;
-        db_.update_folder_pinned(source_folder_, folder_path, true);
-        update_quick_access();
+    menu.addAction("Add to Quick Access", [this, folder_path]() {
+        add_to_quick_access(folder_path);
     });
     
-    menu.addAction("➕ Add Subfolder", [this, folder_path]() {
+    menu.addAction("Add Subfolder...", [this, folder_path]() {
         bool ok;
         QString name = QInputDialog::getText(this, "New Subfolder",
-                                             "Enter folder name:", QLineEdit::Normal, "", &ok);
+            "Enter folder name:", QLineEdit::Normal, "", &ok);
         if (ok && !name.isEmpty()) {
             QString new_path = folder_path + "/" + name;
             folder_model_->add_folder(new_path, true);
@@ -423,11 +389,10 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
         }
     });
     
-    menu.addSeparator();
-    
     FolderNode* node = folder_model_->find_node(folder_path);
-    if (node && !node->exists) {
-        menu.addAction("🗑️ Remove Virtual Folder", [this, folder_path]() {
+    if (node && !node->exists && node->path != source_folder_) {
+        menu.addSeparator();
+        menu.addAction("Remove", [this, folder_path]() {
             folder_model_->remove_folder(folder_path);
             mind_map_view_->refresh_layout();
         });
@@ -436,65 +401,43 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
     menu.exec(pos);
 }
 
-void AdvancedFileTinderDialog::on_add_folder() {
-    bool ok;
-    QString name = QInputDialog::getText(this, "New Folder",
-                                         "Enter folder name:", QLineEdit::Normal, "", &ok);
-    if (ok && !name.isEmpty()) {
-        // Create in source folder
-        QString new_path = source_folder_ + "/" + name;
-        folder_model_->add_folder(new_path, true);
-        mind_map_view_->refresh_layout();
+void AdvancedFileTinderDialog::load_quick_access() {
+    quick_access_folders_ = db_.get_quick_access_folders(source_folder_);
+    update_quick_access_display();
+}
+
+void AdvancedFileTinderDialog::save_quick_access() {
+    db_.save_quick_access_folders(source_folder_, quick_access_folders_);
+}
+
+void AdvancedFileTinderDialog::add_to_quick_access(const QString& folder_path) {
+    if (quick_access_folders_.contains(folder_path)) return;
+    if (quick_access_folders_.size() >= kMaxQuickAccess) {
+        QMessageBox::warning(this, "Quick Access Full",
+            "Quick Access is limited to 10 folders. Remove one first.");
+        return;
+    }
+    quick_access_folders_.append(folder_path);
+    update_quick_access_display();
+}
+
+void AdvancedFileTinderDialog::remove_from_quick_access(int index) {
+    if (index >= 0 && index < quick_access_folders_.size()) {
+        quick_access_folders_.removeAt(index);
+        update_quick_access_display();
     }
 }
 
-void AdvancedFileTinderDialog::on_add_subfolder() {
-    QString parent = QFileDialog::getExistingDirectory(this, "Select Parent Folder", source_folder_);
-    if (parent.isEmpty()) return;
-    
-    bool ok;
-    QString name = QInputDialog::getText(this, "New Subfolder",
-                                         "Enter folder name:", QLineEdit::Normal, "", &ok);
-    if (ok && !name.isEmpty()) {
-        QString new_path = parent + "/" + name;
-        folder_model_->add_folder(new_path, true);
-        mind_map_view_->refresh_layout();
-    }
-}
-
-void AdvancedFileTinderDialog::on_remove_folder() {
-    // Would need a selected folder path
-}
-
-void AdvancedFileTinderDialog::on_pin_folder() {
-    // Would need a selected folder path
-}
-
-void AdvancedFileTinderDialog::on_connect_folders() {
-    // Could implement multi-select connection
-}
-
-void AdvancedFileTinderDialog::update_quick_access() {
+void AdvancedFileTinderDialog::update_quick_access_display() {
     quick_access_list_->clear();
     
-    // Add pinned folders
-    QStringList pinned = folder_model_->get_pinned_folders();
-    for (const QString& path : pinned) {
-        auto* item = new QListWidgetItem("⭐ " + QFileInfo(path).fileName());
+    for (int i = 0; i < quick_access_folders_.size(); ++i) {
+        QString path = quick_access_folders_[i];
+        QString label = QString("%1: %2").arg(i == 9 ? 0 : i + 1).arg(QFileInfo(path).fileName());
+        auto* item = new QListWidgetItem(label);
         item->setData(Qt::UserRole, path);
         item->setToolTip(path);
         quick_access_list_->addItem(item);
-    }
-    
-    // Add recent folders
-    QStringList recent = db_.get_recent_folders(5);
-    for (const QString& path : recent) {
-        if (!pinned.contains(path)) {
-            auto* item = new QListWidgetItem(QFileInfo(path).fileName());
-            item->setData(Qt::UserRole, path);
-            item->setToolTip(path);
-            quick_access_list_->addItem(item);
-        }
     }
 }
 
@@ -505,43 +448,116 @@ void AdvancedFileTinderDialog::on_quick_access_clicked(QListWidgetItem* item) {
     }
 }
 
-void AdvancedFileTinderDialog::on_move_to_folder() {
-    // In advanced mode, we use the folder tree
-    // Show folder picker as fallback
-    QString folder = show_folder_picker();
+void AdvancedFileTinderDialog::on_add_quick_access() {
+    QString folder = QFileDialog::getExistingDirectory(this, "Add to Quick Access", source_folder_);
     if (!folder.isEmpty()) {
-        on_folder_clicked(folder);
+        add_to_quick_access(folder);
     }
+}
+
+void AdvancedFileTinderDialog::on_remove_quick_access() {
+    int row = quick_access_list_->currentRow();
+    if (row >= 0) {
+        remove_from_quick_access(row);
+    }
+}
+
+void AdvancedFileTinderDialog::update_file_info_display() {
+    int idx = get_current_file_index();
+    if (idx < 0 || idx >= static_cast<int>(files_.size())) {
+        file_icon_label_->setText("[---]");
+        file_name_label_->setText("No file selected");
+        file_details_label_->setText("");
+        return;
+    }
+    
+    const auto& file = files_[idx];
+    QString path = file.file_path;
+    QFileInfo info(path);
+    
+    // Icon
+    file_icon_label_->setText(get_file_type_icon(path));
+    
+    // Name
+    file_name_label_->setText(info.fileName());
+    
+    // Details
+    QString size_str;
+    qint64 size = info.size();
+    if (size < 1024) size_str = QString("%1 B").arg(size);
+    else if (size < 1024*1024) size_str = QString("%1 KB").arg(size/1024);
+    else if (size < 1024*1024*1024) size_str = QString("%1 MB").arg(size/(1024*1024));
+    else size_str = QString("%1 GB").arg(size/(1024*1024*1024));
+    
+    QString details = QString("%1 | %2 | %3")
+        .arg(size_str)
+        .arg(info.isDir() ? "Folder" : info.suffix().toUpper())
+        .arg(info.lastModified().toString("yyyy-MM-dd hh:mm"));
+    file_details_label_->setText(details);
+}
+
+QString AdvancedFileTinderDialog::get_file_type_icon(const QString& path) {
+    QFileInfo info(path);
+    if (info.isDir()) return "[DIR]";
+    
+    QMimeDatabase db;
+    QString mime = db.mimeTypeForFile(path).name();
+    
+    if (mime.startsWith("image/")) return "[IMG]";
+    if (mime.startsWith("video/")) return "[VID]";
+    if (mime.startsWith("audio/")) return "[AUD]";
+    if (mime.contains("pdf") || mime.contains("document") || mime.contains("text")) return "[DOC]";
+    if (mime.contains("zip") || mime.contains("archive") || mime.contains("compressed")) return "[ZIP]";
+    return "[FILE]";
+}
+
+void AdvancedFileTinderDialog::show_current_file() {
+    update_file_info_display();
+    update_stats();
+    
+    // Update progress bar
+    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    int total = static_cast<int>(files_.size());
+    progress_bar_->setMaximum(total);
+    progress_bar_->setValue(reviewed);
+    progress_bar_->setFormat(QString("%1 / %2").arg(reviewed).arg(total));
 }
 
 void AdvancedFileTinderDialog::on_finish() {
     save_folder_tree();
+    save_quick_access();
     show_review_summary();
 }
 
 void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
-    // Number keys 1-9 for quick folder access
+    // Number keys 1-9, 0 for quick access
     if (event->key() >= Qt::Key_1 && event->key() <= Qt::Key_9) {
         int index = event->key() - Qt::Key_1;
-        if (index < quick_access_list_->count()) {
-            auto* item = quick_access_list_->item(index);
-            on_quick_access_clicked(item);
+        if (index < quick_access_folders_.size()) {
+            on_folder_clicked(quick_access_folders_[index]);
+            return;
+        }
+    }
+    if (event->key() == Qt::Key_0) {
+        if (quick_access_folders_.size() >= 10) {
+            on_folder_clicked(quick_access_folders_[9]);
             return;
         }
     }
     
+    // Arrow keys same as Basic Mode
     switch (event->key()) {
-        case Qt::Key_D:
+        case Qt::Key_Left:
             on_delete();
             break;
-        case Qt::Key_S:
+        case Qt::Key_Right:
+            // In Advanced Mode, right doesn't auto-keep, need to select folder
+            break;
+        case Qt::Key_Down:
             on_skip();
             break;
-        case Qt::Key_N:
-            on_add_folder();
-            break;
-        case Qt::Key_F:
-            on_toggle_folder_panel();
+        case Qt::Key_Up:
+            on_back();
             break;
         case Qt::Key_Plus:
             if (event->modifiers() & Qt::ControlModifier) {
@@ -553,17 +569,21 @@ void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
                 on_zoom_out();
             }
             break;
+        case Qt::Key_N:
+            prompt_add_folder();
+            break;
         default:
             StandaloneFileTinderDialog::keyPressEvent(event);
     }
 }
 
-void AdvancedFileTinderDialog::on_toggle_folder_panel() {
-    if (folder_panel_->isVisible()) {
-        folder_panel_->hide();
-    } else {
-        folder_panel_->show();
-    }
+void AdvancedFileTinderDialog::on_filter_changed() {
+    // Re-apply filter from FilterWidget
+    // This would need integration with the filter system
+}
+
+void AdvancedFileTinderDialog::on_sort_changed() {
+    // Re-apply sort from FilterWidget
 }
 
 void AdvancedFileTinderDialog::on_zoom_in() {
@@ -581,7 +601,6 @@ void AdvancedFileTinderDialog::on_zoom_fit() {
 void AdvancedFileTinderDialog::load_folder_tree() {
     folder_model_->load_from_database(db_, source_folder_);
     mind_map_view_->refresh_layout();
-    update_quick_access();
 }
 
 void AdvancedFileTinderDialog::save_folder_tree() {

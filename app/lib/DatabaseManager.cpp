@@ -326,3 +326,66 @@ QStringList DatabaseManager::get_recent_folders(int limit) {
     
     return folders;
 }
+
+bool DatabaseManager::save_quick_access_folders(const QString& session_folder, const QStringList& folders) {
+    // Create table if not exists
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS quick_access_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            slot_order INTEGER NOT NULL,
+            UNIQUE(session_folder, slot_order)
+        )
+    )");
+    
+    // Clear existing entries for this session
+    QSqlQuery clear_query(db_);
+    clear_query.prepare("DELETE FROM quick_access_folders WHERE session_folder = ?");
+    clear_query.addBindValue(session_folder);
+    clear_query.exec();
+    
+    // Insert new entries
+    for (int i = 0; i < folders.size() && i < 10; ++i) {
+        QSqlQuery insert_query(db_);
+        insert_query.prepare(R"(
+            INSERT INTO quick_access_folders (session_folder, folder_path, slot_order)
+            VALUES (?, ?, ?)
+        )");
+        insert_query.addBindValue(session_folder);
+        insert_query.addBindValue(folders[i]);
+        insert_query.addBindValue(i);
+        if (!insert_query.exec()) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+QStringList DatabaseManager::get_quick_access_folders(const QString& session_folder) {
+    QStringList folders;
+    
+    // Ensure table exists
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS quick_access_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            slot_order INTEGER NOT NULL,
+            UNIQUE(session_folder, slot_order)
+        )
+    )");
+    
+    QSqlQuery query(db_);
+    query.prepare("SELECT folder_path FROM quick_access_folders WHERE session_folder = ? ORDER BY slot_order");
+    query.addBindValue(session_folder);
+    
+    if (query.exec()) {
+        while (query.next()) {
+            folders.append(query.value(0).toString());
+        }
+    }
+    
+    return folders;
+}

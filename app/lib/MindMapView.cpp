@@ -10,6 +10,57 @@
 #include <QFileInfo>
 #include <cmath>
 
+// === AddNodeItem Implementation ===
+
+AddNodeItem::AddNodeItem(QGraphicsItem* parent)
+    : QGraphicsObject(parent)
+    , is_hovered_(false) {
+    setAcceptHoverEvents(true);
+    setCursor(Qt::PointingHandCursor);
+}
+
+QRectF AddNodeItem::boundingRect() const {
+    return QRectF(0, 0, ui::dimensions::kAddNodeWidth, ui::dimensions::kAddNodeHeight);
+}
+
+void AddNodeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) {
+    painter->setRenderHint(QPainter::Antialiasing);
+    
+    // Circle with "+" inside
+    QColor bg_color = is_hovered_ ? QColor(ui::colors::kAddNodeHover) : QColor(ui::colors::kAddNodeBg);
+    
+    QRectF rect = boundingRect().adjusted(2, 2, -2, -2);
+    
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(bg_color);
+    painter->drawEllipse(rect);
+    
+    // Draw "+" text
+    painter->setPen(Qt::white);
+    QFont font;
+    font.setPointSize(24);
+    font.setBold(true);
+    painter->setFont(font);
+    painter->drawText(rect, Qt::AlignCenter, "+");
+}
+
+void AddNodeItem::mousePressEvent(QGraphicsSceneMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        emit clicked();
+    }
+    QGraphicsObject::mousePressEvent(event);
+}
+
+void AddNodeItem::hoverEnterEvent(QGraphicsSceneHoverEvent*) {
+    is_hovered_ = true;
+    update();
+}
+
+void AddNodeItem::hoverLeaveEvent(QGraphicsSceneHoverEvent*) {
+    is_hovered_ = false;
+    update();
+}
+
 // === FolderNodeItem Implementation ===
 
 FolderNodeItem::FolderNodeItem(FolderNode* node, QGraphicsItem* parent)
@@ -224,6 +275,7 @@ MindMapView::MindMapView(QWidget* parent)
     : QGraphicsView(parent)
     , scene_(new QGraphicsScene(this))
     , model_(nullptr)
+    , add_node_(nullptr)
     , is_panning_(false)
     , current_scale_(1.0) {
     
@@ -231,13 +283,13 @@ MindMapView::MindMapView(QWidget* parent)
     setRenderHint(QPainter::Antialiasing);
     setRenderHint(QPainter::SmoothPixmapTransform);
     setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
-    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setDragMode(QGraphicsView::NoDrag);
     
-    // Dark background
-    setBackgroundBrush(QColor(45, 52, 60));
+    // Light background for Windows-like look
+    setBackgroundBrush(QColor(250, 250, 250));
     
     // Set minimum size
     setMinimumSize(ui::dimensions::kFolderTreePanelMinWidth, 400);
@@ -265,6 +317,7 @@ void MindMapView::refresh_layout() {
     scene_->clear();
     node_items_.clear();
     connection_lines_.clear();
+    add_node_ = nullptr;
     
     // Build tree
     build_tree();
@@ -275,6 +328,9 @@ void MindMapView::refresh_layout() {
     // Create connections
     create_connections();
     
+    // Create the "+" add node
+    create_add_node();
+    
     // Fit in view
     scene_->setSceneRect(scene_->itemsBoundingRect().adjusted(-50, -50, 50, 50));
 }
@@ -284,6 +340,30 @@ void MindMapView::build_tree() {
     
     int y_offset = 30;
     create_node_item(model_->root_node(), 0, y_offset);
+}
+
+void MindMapView::create_add_node() {
+    // Create "+" node connected to root
+    add_node_ = new AddNodeItem();
+    scene_->addItem(add_node_);
+    
+    // Position next to the last node or root
+    qreal x = 30;
+    qreal y = 30;
+    
+    if (model_ && model_->root_node()) {
+        auto it = node_items_.find(model_->root_node()->path);
+        if (it != node_items_.end()) {
+            QPointF root_pos = it.value()->pos();
+            x = root_pos.x() + ui::dimensions::kNodeWidth + ui::dimensions::kNodeSpacingHorizontal;
+            y = root_pos.y();
+        }
+    }
+    
+    add_node_->setPos(x, y);
+    
+    // Connect signal
+    connect(add_node_, &AddNodeItem::clicked, this, &MindMapView::add_folder_requested);
 }
 
 FolderNodeItem* MindMapView::create_node_item(FolderNode* node, int depth, int& y_offset) {

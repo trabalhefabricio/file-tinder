@@ -13,6 +13,28 @@
 class FolderTreeModel;
 class FolderNode;
 
+// Special "+" node for adding new folders
+class AddNodeItem : public QGraphicsObject {
+    Q_OBJECT
+
+public:
+    explicit AddNodeItem(QGraphicsItem* parent = nullptr);
+    
+    QRectF boundingRect() const override;
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget) override;
+    
+signals:
+    void clicked();
+    
+protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+    void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override;
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override;
+    
+private:
+    bool is_hovered_;
+};
+
 class FolderNodeItem : public QGraphicsObject {
     Q_OBJECT
 
@@ -96,6 +118,7 @@ private:
     FolderTreeModel* model_;
     QMap<QString, FolderNodeItem*> node_items_;
     std::vector<ConnectionLineItem*> connection_lines_;
+    AddNodeItem* add_node_;
     
     bool is_panning_;
     QPoint last_pan_point_;
@@ -104,6 +127,7 @@ private:
     void build_tree();
     void layout_nodes();
     void create_connections();
+    void create_add_node();
     FolderNodeItem* create_node_item(FolderNode* node, int depth, int& y_offset);
     void connect_signals(FolderNodeItem* item);
 };

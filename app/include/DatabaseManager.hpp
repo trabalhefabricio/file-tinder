@@ -60,6 +60,10 @@ public:
     bool add_recent_folder(const QString& folder_path);
     QStringList get_recent_folders(int limit = 10);
     
+    // Quick access folders (manual, limited to 10)
+    bool save_quick_access_folders(const QString& session_folder, const QStringList& folders);
+    QStringList get_quick_access_folders(const QString& session_folder);
+    
 private:
     QSqlDatabase db_;
     QString db_path_;
