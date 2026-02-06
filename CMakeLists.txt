@@ -22,6 +22,8 @@ set(SOURCES
     app/lib/MindMapView.cpp
     app/lib/AppLogger.cpp
     app/lib/DiagnosticTool.cpp
+    app/lib/FilterWidget.cpp
+    app/lib/ImagePreviewWindow.cpp
 )
 
 # Header files
@@ -36,6 +38,8 @@ set(HEADERS
     app/include/ui_constants.hpp
     app/include/AppLogger.hpp
     app/include/DiagnosticTool.hpp
+    app/include/FilterWidget.hpp
+    app/include/ImagePreviewWindow.hpp
 )
 
 # Resources
