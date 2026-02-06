@@ -9,6 +9,7 @@
 #include <QMessageBox>
 #include <QKeyEvent>
 #include <QCloseEvent>
+#include <QResizeEvent>
 #include <QPixmap>
 #include <QMimeDatabase>
 #include <QTextStream>
@@ -22,6 +23,9 @@
 #include <QGraphicsOpacityEffect>
 #include <QPropertyAnimation>
 #include <QApplication>
+#include <QSettings>
+#include <QSplitter>
+#include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
                                                        DatabaseManager& db,
@@ -31,15 +35,25 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , source_folder_(source_folder)
     , db_(db)
     , current_filter_(FileFilterType::All)
+    , sort_field_(FileSortField::Name)
+    , sort_order_(SortOrder::Ascending)
+    , include_folders_(false)
     , keep_count_(0)
     , delete_count_(0)
     , skip_count_(0)
     , move_count_(0)
+    , file_icon_label_(nullptr)
+    , sort_combo_(nullptr)
+    , sort_order_btn_(nullptr)
+    , folders_checkbox_(nullptr)
     , swipe_animation_(nullptr) {
     
     setWindowTitle("File Tinder - Basic Mode");
     setMinimumSize(ui::dimensions::kStandaloneFileTinderMinWidth,
                    ui::dimensions::kStandaloneFileTinderMinHeight);
+    
+    // Allow resizing
+    setSizeGripEnabled(true);
     
     // Don't call setup_ui() here - it's virtual and could cause issues
     // with derived classes. Call initialize() after construction instead.
@@ -50,220 +64,301 @@ StandaloneFileTinderDialog::~StandaloneFileTinderDialog() = default;
 void StandaloneFileTinderDialog::initialize() {
     setup_ui();
     scan_files();
+    apply_sort();  // Sort files after loading
     rebuild_filtered_indices();
     load_session_state();
     
     if (!filtered_indices_.empty()) {
         show_current_file();
     }
+    
+    // Save this folder as last used
+    save_last_folder();
+}
+
+void StandaloneFileTinderDialog::save_last_folder() {
+    QSettings settings("FileTinder", "FileTinder");
+    settings.setValue("lastFolder", source_folder_);
+}
+
+QString StandaloneFileTinderDialog::get_last_folder() {
+    QSettings settings("FileTinder", "FileTinder");
+    return settings.value("lastFolder", QDir::homePath()).toString();
 }
 
 void StandaloneFileTinderDialog::setup_ui() {
     auto* main_layout = new QVBoxLayout(this);
-    main_layout->setContentsMargins(20, 20, 20, 20);
-    main_layout->setSpacing(15);
+    main_layout->setContentsMargins(15, 15, 15, 15);
+    main_layout->setSpacing(10);
     
-    // Title bar with filter and help
-    auto* title_bar = new QWidget();
-    auto* title_layout = new QHBoxLayout(title_bar);
-    title_layout->setContentsMargins(0, 0, 0, 0);
+    // Top bar: Title + Mode switch (upper right)
+    auto* top_bar = new QWidget();
+    auto* top_layout = new QHBoxLayout(top_bar);
+    top_layout->setContentsMargins(0, 0, 0, 0);
     
-    auto* title_label = new QLabel("📁 FILE TINDER - Basic Mode");
+    auto* title_label = new QLabel("File Tinder - Basic Mode");
     title_label->setStyleSheet(QString(
-        "font-size: %1px; font-weight: bold; color: %2; padding: 10px;"
+        "font-size: %1px; font-weight: bold; color: %2;"
     ).arg(ui::fonts::kHeaderSize).arg(ui::colors::kMoveColor));
-    title_layout->addWidget(title_label);
+    top_layout->addWidget(title_label);
     
-    title_layout->addStretch();
+    top_layout->addStretch();
     
-    // File type filter
-    auto* filter_label = new QLabel("Filter:");
-    filter_label->setStyleSheet("font-weight: bold;");
-    title_layout->addWidget(filter_label);
+    // Mode switch in upper right corner
+    switch_mode_btn_ = new QPushButton("Advanced Mode");
+    switch_mode_btn_->setFixedSize(130, 32);
+    switch_mode_btn_->setStyleSheet(
+        "QPushButton { font-size: 11px; padding: 5px 10px; "
+        "background-color: #9b59b6; border-radius: 4px; color: white; }"
+        "QPushButton:hover { background-color: #8e44ad; }"
+    );
+    connect(switch_mode_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_switch_mode_clicked);
+    top_layout->addWidget(switch_mode_btn_);
     
+    // Help button
+    help_btn_ = new QPushButton("?");
+    help_btn_->setFixedSize(32, 32);
+    help_btn_->setToolTip("Keyboard Shortcuts");
+    help_btn_->setStyleSheet(
+        "QPushButton { font-size: 14px; font-weight: bold; background-color: #34495e; "
+        "border-radius: 16px; color: white; }"
+        "QPushButton:hover { background-color: #3d566e; }"
+    );
+    connect(help_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::show_shortcuts_help);
+    top_layout->addWidget(help_btn_);
+    
+    main_layout->addWidget(top_bar);
+    
+    // Filter/Sort bar
+    auto* filter_bar = new QWidget();
+    auto* filter_layout = new QHBoxLayout(filter_bar);
+    filter_layout->setContentsMargins(0, 5, 0, 5);
+    filter_layout->setSpacing(10);
+    
+    // Filter
+    filter_layout->addWidget(new QLabel("Filter:"));
     filter_combo_ = new QComboBox();
-    filter_combo_->addItem("📄 All Files", static_cast<int>(FileFilterType::All));
-    filter_combo_->addItem("🖼️ Images", static_cast<int>(FileFilterType::Images));
-    filter_combo_->addItem("🎬 Videos", static_cast<int>(FileFilterType::Videos));
-    filter_combo_->addItem("🎵 Audio", static_cast<int>(FileFilterType::Audio));
-    filter_combo_->addItem("📝 Documents", static_cast<int>(FileFilterType::Documents));
-    filter_combo_->addItem("📦 Archives", static_cast<int>(FileFilterType::Archives));
-    filter_combo_->addItem("❓ Other", static_cast<int>(FileFilterType::Other));
-    filter_combo_->setMinimumWidth(130);
+    filter_combo_->addItem("All Files", static_cast<int>(FileFilterType::All));
+    filter_combo_->addItem("Images", static_cast<int>(FileFilterType::Images));
+    filter_combo_->addItem("Videos", static_cast<int>(FileFilterType::Videos));
+    filter_combo_->addItem("Audio", static_cast<int>(FileFilterType::Audio));
+    filter_combo_->addItem("Documents", static_cast<int>(FileFilterType::Documents));
+    filter_combo_->addItem("Archives", static_cast<int>(FileFilterType::Archives));
+    filter_combo_->addItem("Other", static_cast<int>(FileFilterType::Other));
+    filter_combo_->addItem("Folders Only", static_cast<int>(FileFilterType::FoldersOnly));
+    filter_combo_->addItem("Specify...", static_cast<int>(FileFilterType::Custom));
+    filter_combo_->setMinimumWidth(120);
     filter_combo_->setStyleSheet(
-        "QComboBox { padding: 5px 10px; background-color: #34495e; "
+        "QComboBox { padding: 4px 8px; background-color: #34495e; "
+        "border-radius: 4px; color: white; }"
+        "QComboBox:hover { background-color: #3d566e; }"
+        "QComboBox::drop-down { border: none; }"
+        "QComboBox:focus { border: 2px solid #3498db; }"
+    );
+    connect(filter_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &StandaloneFileTinderDialog::on_filter_changed);
+    filter_layout->addWidget(filter_combo_);
+    
+    // Include folders checkbox
+    folders_checkbox_ = new QCheckBox("Include Folders");
+    folders_checkbox_->setStyleSheet("color: #bdc3c7;");
+    connect(folders_checkbox_, &QCheckBox::stateChanged, 
+            this, &StandaloneFileTinderDialog::on_folders_toggle_changed);
+    filter_layout->addWidget(folders_checkbox_);
+    
+    filter_layout->addSpacing(20);
+    
+    // Sort
+    filter_layout->addWidget(new QLabel("Sort:"));
+    sort_combo_ = new QComboBox();
+    sort_combo_->addItem("Name", static_cast<int>(FileSortField::Name));
+    sort_combo_->addItem("Size", static_cast<int>(FileSortField::Size));
+    sort_combo_->addItem("Type", static_cast<int>(FileSortField::Type));
+    sort_combo_->addItem("Date Modified", static_cast<int>(FileSortField::DateModified));
+    sort_combo_->setMinimumWidth(100);
+    sort_combo_->setStyleSheet(
+        "QComboBox { padding: 4px 8px; background-color: #34495e; "
         "border-radius: 4px; color: white; }"
         "QComboBox:hover { background-color: #3d566e; }"
         "QComboBox::drop-down { border: none; }"
     );
-    connect(filter_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &StandaloneFileTinderDialog::on_filter_changed);
-    title_layout->addWidget(filter_combo_);
+    connect(sort_combo_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &StandaloneFileTinderDialog::on_sort_changed);
+    filter_layout->addWidget(sort_combo_);
     
-    // Help button
-    help_btn_ = new QPushButton("❓");
-    help_btn_->setFixedSize(36, 36);
-    help_btn_->setToolTip("Keyboard Shortcuts");
-    help_btn_->setStyleSheet(
-        "QPushButton { font-size: 16px; background-color: #34495e; "
-        "border-radius: 18px; }"
+    // Sort order toggle button
+    sort_order_btn_ = new QPushButton("Asc");
+    sort_order_btn_->setFixedSize(50, 28);
+    sort_order_btn_->setStyleSheet(
+        "QPushButton { padding: 4px; background-color: #34495e; "
+        "border-radius: 4px; color: white; font-size: 11px; }"
         "QPushButton:hover { background-color: #3d566e; }"
     );
-    connect(help_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::show_shortcuts_help);
-    title_layout->addWidget(help_btn_);
+    connect(sort_order_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_sort_order_toggled);
+    filter_layout->addWidget(sort_order_btn_);
     
-    main_layout->addWidget(title_bar);
+    filter_layout->addStretch();
+    main_layout->addWidget(filter_bar);
     
-    // Preview area
-    auto* preview_group = new QGroupBox("File Preview");
-    preview_group->setStyleSheet("QGroupBox { font-weight: bold; }");
-    auto* preview_layout = new QVBoxLayout(preview_group);
+    // Preview area with centered icon
+    auto* preview_widget = new QWidget();
+    preview_widget->setStyleSheet("background-color: #2c3e50; border-radius: 8px;");
+    auto* preview_layout = new QVBoxLayout(preview_widget);
+    preview_layout->setContentsMargins(15, 15, 15, 15);
     
+    // Centered file icon (for non-image files)
+    file_icon_label_ = new QLabel();
+    file_icon_label_->setAlignment(Qt::AlignCenter);
+    file_icon_label_->setMinimumHeight(80);
+    file_icon_label_->setStyleSheet("font-size: 64px;");
+    preview_layout->addWidget(file_icon_label_);
+    
+    // Preview label (for images/text)
     preview_label_ = new QLabel();
-    preview_label_->setMinimumSize(ui::dimensions::kPreviewMaxWidth, 
-                                    ui::dimensions::kPreviewMaxHeight);
+    preview_label_->setMinimumSize(400, 300);
     preview_label_->setAlignment(Qt::AlignCenter);
-    preview_label_->setStyleSheet(
-        "background-color: #2c3e50; border-radius: 8px; padding: 10px;"
-    );
-    preview_layout->addWidget(preview_label_);
+    preview_label_->setWordWrap(true);
+    preview_layout->addWidget(preview_label_, 1);
     
+    // File name and info below preview
     file_info_label_ = new QLabel();
     file_info_label_->setAlignment(Qt::AlignCenter);
-    file_info_label_->setStyleSheet("color: #7f8c8d; padding: 5px;");
+    file_info_label_->setStyleSheet("color: #ecf0f1; padding: 10px; font-size: 13px;");
+    file_info_label_->setWordWrap(true);
     preview_layout->addWidget(file_info_label_);
     
-    main_layout->addWidget(preview_group, 1);
+    main_layout->addWidget(preview_widget, 1);  // Stretch to fill space
     
     // Progress section
     auto* progress_widget = new QWidget();
     auto* progress_vlayout = new QVBoxLayout(progress_widget);
-    progress_vlayout->setContentsMargins(0, 0, 0, 0);
+    progress_vlayout->setContentsMargins(0, 5, 0, 5);
+    progress_vlayout->setSpacing(5);
     
     progress_bar_ = new QProgressBar();
     progress_bar_->setTextVisible(true);
+    progress_bar_->setFixedHeight(20);
     progress_bar_->setStyleSheet(
-        "QProgressBar { border: 2px solid #34495e; border-radius: 5px; text-align: center; }"
+        "QProgressBar { border: 1px solid #34495e; border-radius: 4px; text-align: center; background: #2c3e50; }"
         "QProgressBar::chunk { background-color: #3498db; }"
     );
     progress_vlayout->addWidget(progress_bar_);
     
     progress_label_ = new QLabel();
     progress_label_->setAlignment(Qt::AlignCenter);
+    progress_label_->setStyleSheet("color: #bdc3c7; font-size: 11px;");
     progress_vlayout->addWidget(progress_label_);
     
     main_layout->addWidget(progress_widget);
     
-    // Stats
+    // Stats bar
     stats_label_ = new QLabel();
     stats_label_->setAlignment(Qt::AlignCenter);
     stats_label_->setStyleSheet(
-        "font-size: 14px; padding: 10px; background-color: #34495e; border-radius: 5px;"
+        "font-size: 12px; padding: 8px; background-color: #34495e; border-radius: 4px;"
     );
     main_layout->addWidget(stats_label_);
     
-    // Action buttons - Main area with large Delete/Keep buttons
-    auto* buttons_widget = new QWidget();
-    auto* buttons_layout = new QHBoxLayout(buttons_widget);
-    buttons_layout->setSpacing(20);
-    buttons_layout->setContentsMargins(10, 10, 10, 10);
+    // ============ ACTION BUTTONS SECTION ============
+    // New layout: Keep/Delete SIDE BY SIDE (large), Back/Skip below (thin)
     
-    // Left column: Back button (secondary, smaller)
-    auto* left_col = new QVBoxLayout();
-    back_btn_ = new QPushButton("Back\n[Backspace]");
-    back_btn_->setMinimumSize(ui::dimensions::kSecondaryButtonWidth, 
-                              ui::dimensions::kSecondaryButtonHeight);
-    back_btn_->setStyleSheet(
-        "QPushButton { font-size: 12px; font-weight: bold; padding: 8px; "
-        "background-color: #7f8c8d; border: 1px solid #6c7a7d; color: white; }"
-        "QPushButton:hover { background-color: #95a5a6; }");
-    connect(back_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_back);
-    left_col->addWidget(back_btn_);
-    left_col->addStretch();
-    buttons_layout->addLayout(left_col);
+    auto* action_widget = new QWidget();
+    auto* action_layout = new QVBoxLayout(action_widget);
+    action_layout->setSpacing(10);
+    action_layout->setContentsMargins(20, 10, 20, 10);
     
-    // CENTER LEFT: Large DELETE button (2x size)
-    delete_btn_ = new QPushButton("DELETE\n[Left Arrow]");
-    delete_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, 
-                                ui::dimensions::kMainButtonHeight);
+    // Row 1: KEEP and DELETE side by side (large buttons)
+    auto* main_btn_row = new QHBoxLayout();
+    main_btn_row->setSpacing(20);
+    
+    delete_btn_ = new QPushButton("DELETE\n[Left]");
+    delete_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, ui::dimensions::kMainButtonHeight);
+    delete_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     delete_btn_->setStyleSheet(QString(
-        "QPushButton { font-size: 18px; font-weight: bold; padding: 15px; "
-        "background-color: %1; border: 2px solid #c0392b; color: white; }"
-        "QPushButton:hover { background-color: #c0392b; border-color: #a93226; }"
+        "QPushButton { font-size: 18px; font-weight: bold; "
+        "background-color: %1; border: 2px solid #c0392b; color: white; border-radius: 8px; }"
+        "QPushButton:hover { background-color: #c0392b; }"
     ).arg(ui::colors::kDeleteColor));
     connect(delete_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_delete);
-    buttons_layout->addWidget(delete_btn_, 2);
+    main_btn_row->addWidget(delete_btn_);
     
-    // CENTER: Skip button (between the two main buttons, smaller)
-    skip_btn_ = new QPushButton("Skip\n[Down]");
-    skip_btn_->setMinimumSize(ui::dimensions::kSecondaryButtonWidth, 
-                              ui::dimensions::kSecondaryButtonHeight);
+    keep_btn_ = new QPushButton("KEEP\n[Right]");
+    keep_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, ui::dimensions::kMainButtonHeight);
+    keep_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    keep_btn_->setStyleSheet(QString(
+        "QPushButton { font-size: 18px; font-weight: bold; "
+        "background-color: %1; border: 2px solid #27ae60; color: white; border-radius: 8px; }"
+        "QPushButton:hover { background-color: #27ae60; }"
+    ).arg(ui::colors::kKeepColor));
+    connect(keep_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_keep);
+    main_btn_row->addWidget(keep_btn_);
+    
+    action_layout->addLayout(main_btn_row);
+    
+    // Row 2: BACK and SKIP (thinner buttons)
+    auto* nav_btn_row = new QHBoxLayout();
+    nav_btn_row->setSpacing(20);
+    
+    back_btn_ = new QPushButton("Back [Up]");
+    back_btn_->setFixedHeight(40);
+    back_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    back_btn_->setStyleSheet(
+        "QPushButton { font-size: 12px; font-weight: bold; "
+        "background-color: #7f8c8d; border: 1px solid #6c7a7d; color: white; border-radius: 4px; }"
+        "QPushButton:hover { background-color: #95a5a6; }"
+    );
+    connect(back_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_back);
+    nav_btn_row->addWidget(back_btn_);
+    
+    skip_btn_ = new QPushButton("Skip [Down]");
+    skip_btn_->setFixedHeight(40);
+    skip_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     skip_btn_->setStyleSheet(QString(
-        "QPushButton { font-size: 12px; font-weight: bold; padding: 8px; "
-        "background-color: %1; border: 1px solid #d68910; color: white; }"
+        "QPushButton { font-size: 12px; font-weight: bold; "
+        "background-color: %1; border: 1px solid #d68910; color: white; border-radius: 4px; }"
         "QPushButton:hover { background-color: #e67e22; }"
     ).arg(ui::colors::kSkipColor));
     connect(skip_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_skip);
-    buttons_layout->addWidget(skip_btn_);
+    nav_btn_row->addWidget(skip_btn_);
     
-    // CENTER RIGHT: Large KEEP button (2x size)
-    keep_btn_ = new QPushButton("KEEP\n[Right Arrow]");
-    keep_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, 
-                              ui::dimensions::kMainButtonHeight);
-    keep_btn_->setStyleSheet(QString(
-        "QPushButton { font-size: 18px; font-weight: bold; padding: 15px; "
-        "background-color: %1; border: 2px solid #27ae60; color: white; }"
-        "QPushButton:hover { background-color: #27ae60; border-color: #1e8449; }"
-    ).arg(ui::colors::kKeepColor));
-    connect(keep_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_keep);
-    buttons_layout->addWidget(keep_btn_, 2);
+    action_layout->addLayout(nav_btn_row);
     
-    // Right column: placeholder for symmetry
-    buttons_layout->addSpacing(ui::dimensions::kSecondaryButtonWidth);
+    main_layout->addWidget(action_widget);
     
-    main_layout->addWidget(buttons_widget);
+    // Bottom bar: Move and Finish buttons
+    auto* bottom_bar = new QWidget();
+    auto* bottom_layout = new QHBoxLayout(bottom_bar);
+    bottom_layout->setContentsMargins(0, 5, 0, 0);
+    bottom_layout->setSpacing(15);
     
-    // Secondary actions
-    auto* secondary_widget = new QWidget();
-    auto* secondary_layout = new QHBoxLayout(secondary_widget);
-    secondary_layout->setSpacing(15);
-    
-    move_btn_ = new QPushButton("📁 Move to Folder...");
-    move_btn_->setMinimumSize(150, 40);
+    move_btn_ = new QPushButton("Move to Folder...");
+    move_btn_->setFixedHeight(36);
     move_btn_->setStyleSheet(QString(
-        "QPushButton { font-size: 13px; padding: 8px; "
-        "background-color: %1; border-radius: 6px; color: white; }"
+        "QPushButton { font-size: 12px; padding: 8px 15px; "
+        "background-color: %1; border-radius: 4px; color: white; }"
         "QPushButton:hover { background-color: #2980b9; }"
     ).arg(ui::colors::kMoveColor));
     connect(move_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_move_to_folder);
-    secondary_layout->addWidget(move_btn_);
+    bottom_layout->addWidget(move_btn_);
     
-    switch_mode_btn_ = new QPushButton("🔄 Advanced Mode");
-    switch_mode_btn_->setMinimumSize(150, 40);
-    switch_mode_btn_->setStyleSheet(
-        "QPushButton { font-size: 13px; padding: 8px; "
-        "background-color: #9b59b6; border-radius: 6px; color: white; }"
-        "QPushButton:hover { background-color: #8e44ad; }"
-    );
-    connect(switch_mode_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_switch_mode_clicked);
-    secondary_layout->addWidget(switch_mode_btn_);
+    bottom_layout->addStretch();
     
-    finish_btn_ = new QPushButton("✓ Finish Review");
-    finish_btn_->setMinimumSize(150, 40);
+    finish_btn_ = new QPushButton("Finish Review");
+    finish_btn_->setFixedHeight(36);
     finish_btn_->setStyleSheet(
-        "QPushButton { font-size: 13px; padding: 8px; "
-        "background-color: #1abc9c; border-radius: 6px; color: white; }"
+        "QPushButton { font-size: 12px; padding: 8px 15px; "
+        "background-color: #1abc9c; border-radius: 4px; color: white; }"
         "QPushButton:hover { background-color: #16a085; }"
     );
     connect(finish_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_finish);
-    secondary_layout->addWidget(finish_btn_);
+    bottom_layout->addWidget(finish_btn_);
     
-    main_layout->addWidget(secondary_widget);
+    main_layout->addWidget(bottom_bar);
     
-    // Keyboard shortcuts hint at bottom
-    shortcuts_label_ = new QLabel("→ Keep | ← Delete | ↓ Skip | ↑ Back | M Move | ? Help");
+    // Keyboard shortcuts hint
+    shortcuts_label_ = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | M=Move | ?=Help");
     shortcuts_label_->setAlignment(Qt::AlignCenter);
-    shortcuts_label_->setStyleSheet("color: #7f8c8d; font-size: 11px;");
+    shortcuts_label_->setStyleSheet("color: #7f8c8d; font-size: 10px;");
     main_layout->addWidget(shortcuts_label_);
     
     update_stats();
@@ -275,28 +370,43 @@ void StandaloneFileTinderDialog::scan_files() {
     
     QDir dir(source_folder_);
     if (!dir.exists()) {
+        LOG_ERROR("BasicMode", QString("Source folder does not exist: %1").arg(source_folder_));
         QMessageBox::warning(this, "Error", "Source folder does not exist.");
         return;
     }
     
-    QStringList entries = dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
+    // Include both files and directories based on settings
+    QDir::Filters filters = QDir::Files | QDir::NoDotAndDotDot;
+    if (include_folders_) {
+        filters |= QDir::Dirs;
+    }
+    
+    QStringList entries = dir.entryList(filters);
     
     for (const QString& entry : entries) {
-        QString full_path = dir.absoluteFilePath(entry);
-        QFileInfo info(full_path);
-        QMimeType mime_type = mime_db.mimeTypeForFile(full_path);
-        
-        FileToProcess file;
-        file.path = full_path;
-        file.name = info.fileName();
-        file.extension = info.suffix().toLower();
-        file.size = info.size();
-        file.modified_date = info.lastModified().toString("MMM d, yyyy HH:mm");
-        file.decision = "pending";
-        file.mime_type = mime_type.name();
-        
-        files_.push_back(file);
+        try {
+            QString full_path = dir.absoluteFilePath(entry);
+            QFileInfo info(full_path);
+            QMimeType mime_type = mime_db.mimeTypeForFile(full_path);
+            
+            FileToProcess file;
+            file.path = full_path;
+            file.name = info.fileName();
+            file.extension = info.suffix().toLower();
+            file.size = info.isDir() ? 0 : info.size();
+            file.modified_datetime = info.lastModified();
+            file.modified_date = file.modified_datetime.toString("MMM d, yyyy HH:mm");
+            file.decision = "pending";
+            file.mime_type = mime_type.name();
+            file.is_directory = info.isDir();
+            
+            files_.push_back(file);
+        } catch (const std::exception& ex) {
+            LOG_ERROR("BasicMode", QString("Error scanning file %1: %2").arg(entry, ex.what()));
+        }
     }
+    
+    LOG_INFO("BasicMode", QString("Scanned %1 files from %2").arg(files_.size()).arg(source_folder_));
     
     // Update progress
     if (!files_.empty()) {
@@ -348,6 +458,7 @@ void StandaloneFileTinderDialog::save_session_state() {
 void StandaloneFileTinderDialog::show_current_file() {
     int file_idx = get_current_file_index();
     if (file_idx < 0 || file_idx >= static_cast<int>(files_.size())) {
+        if (file_icon_label_) file_icon_label_->clear();
         preview_label_->setText("No more files to review");
         file_info_label_->setText("");
         return;
@@ -360,51 +471,90 @@ void StandaloneFileTinderDialog::show_current_file() {
 }
 
 void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
+    QFileInfo finfo(file_path);
     QMimeDatabase mime_db;
     QMimeType mime_type = mime_db.mimeTypeForFile(file_path);
     QString type = mime_type.name();
     
-    if (type.startsWith("image/")) {
+    // Clear previous content
+    if (file_icon_label_) file_icon_label_->clear();
+    preview_label_->clear();
+    
+    // Determine icon for the file type (always shown centered)
+    QString icon = "[FILE]";
+    if (finfo.isDir()) {
+        icon = "[DIR]";
+    } else if (type.startsWith("image/")) {
+        icon = "[IMG]";
+    } else if (type.startsWith("video/")) {
+        icon = "[VID]";
+    } else if (type.startsWith("audio/")) {
+        icon = "[AUD]";
+    } else if (type.contains("pdf")) {
+        icon = "[PDF]";
+    } else if (type.contains("zip") || type.contains("archive") || type.contains("compressed")) {
+        icon = "[ZIP]";
+    } else if (type.contains("spreadsheet") || type.contains("excel")) {
+        icon = "[XLS]";
+    } else if (type.contains("document") || type.contains("word")) {
+        icon = "[DOC]";
+    } else if (type.startsWith("text/")) {
+        icon = "[TXT]";
+    }
+    
+    // Set the centered icon
+    if (file_icon_label_) {
+        file_icon_label_->setText(QString("<span style='font-family: monospace; font-size: 48px; "
+                                          "color: #3498db; font-weight: bold;'>%1</span>").arg(icon));
+    }
+    
+    // For images, show preview (but not a separate window)
+    if (type.startsWith("image/") && !finfo.isDir()) {
         QPixmap pixmap(file_path);
         if (!pixmap.isNull()) {
-            pixmap = pixmap.scaled(ui::dimensions::kPreviewMaxWidth - 20,
-                                   ui::dimensions::kPreviewMaxHeight - 20,
-                                   Qt::KeepAspectRatio,
-                                   Qt::SmoothTransformation);
+            // Scale to fit the preview area
+            int max_w = preview_label_->width() > 100 ? preview_label_->width() - 20 : 400;
+            int max_h = preview_label_->height() > 100 ? preview_label_->height() - 20 : 300;
+            pixmap = pixmap.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
             preview_label_->setPixmap(pixmap);
-            return;
-        }
-    } else if (type.startsWith("text/")) {
-        QFile file(file_path);
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream stream(&file);
-            QString content = stream.read(2000);
-            if (stream.status() == QTextStream::Ok && !stream.atEnd()) {
-                content += "\n...(truncated)";
-            }
-            preview_label_->setText(content);
-            preview_label_->setWordWrap(true);
             return;
         }
     }
     
-    // Default: show file icon and info
-    QString icon = "📄";
-    if (type.startsWith("video/")) icon = "🎬";
-    else if (type.startsWith("audio/")) icon = "🎵";
-    else if (type.contains("pdf")) icon = "📕";
-    else if (type.contains("zip") || type.contains("archive")) icon = "📦";
-    else if (type.contains("spreadsheet") || type.contains("excel")) icon = "📊";
-    else if (type.contains("document") || type.contains("word")) icon = "📝";
+    // For text files, show content preview
+    if (type.startsWith("text/") && !finfo.isDir()) {
+        QFile file(file_path);
+        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QTextStream stream(&file);
+            QString content = stream.read(1500);  // Reduced to avoid overflow
+            if (!stream.atEnd()) {
+                content += "\n...(truncated)";
+            }
+            preview_label_->setText(content);
+            preview_label_->setStyleSheet("color: #ecf0f1; font-family: monospace; font-size: 11px;");
+            return;
+        }
+    }
     
-    preview_label_->setText(QString("<div style='text-align: center; font-size: 64px;'>%1</div>"
-                                    "<div style='text-align: center; color: #bdc3c7; font-size: 14px;'>%2</div>")
-                           .arg(icon, mime_type.comment()));
+    // For directories
+    if (finfo.isDir()) {
+        QDir dir(file_path);
+        int file_count = dir.entryList(QDir::Files | QDir::NoDotAndDotDot).count();
+        int dir_count = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot).count();
+        preview_label_->setText(QString("Directory contains:\n%1 files\n%2 subdirectories")
+                               .arg(file_count).arg(dir_count));
+        return;
+    }
+    
+    // Default: show MIME type info
+    preview_label_->setText(QString("File Type: %1\n\nNo preview available").arg(mime_type.comment()));
 }
 
 void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
     QString size_str;
-    if (file.size < 1024) {
+    if (file.is_directory) {
+        size_str = "Directory";
+    } else if (file.size < 1024) {
         size_str = QString("%1 B").arg(file.size);
     } else if (file.size < 1024 * 1024) {
         size_str = QString("%1 KB").arg(file.size / 1024.0, 0, 'f', 1);
@@ -414,10 +564,12 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
         size_str = QString("%1 GB").arg(file.size / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
     }
     
-    file_info_label_->setText(QString("<b>%1</b><br>Size: %2 | Type: %3 | Modified: %4")
-                              .arg(file.name, size_str, 
-                                   file.extension.isEmpty() ? "Unknown" : file.extension.toUpper(),
-                                   file.modified_date));
+    QString type_str = file.is_directory ? "Folder" : 
+                       (file.extension.isEmpty() ? "Unknown" : file.extension.toUpper());
+    
+    file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
+                                      "<span style='color: #95a5a6;'>%2 | %3 | %4</span>")
+                              .arg(file.name, size_str, type_str, file.modified_date));
 }
 
 void StandaloneFileTinderDialog::update_progress() {
@@ -879,14 +1031,117 @@ void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
     QDialog::closeEvent(event);
 }
 
+void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
+    QDialog::resizeEvent(event);
+    // The layout handles resizing automatically
+}
+
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {
     save_session_state();
     emit switch_to_advanced_mode();
 }
 
+// Sorting implementation
+void StandaloneFileTinderDialog::on_sort_changed(int index) {
+    if (!sort_combo_) return;
+    sort_field_ = static_cast<FileSortField>(sort_combo_->itemData(index).toInt());
+    apply_sort();
+    rebuild_filtered_indices();
+    if (!filtered_indices_.empty()) {
+        show_current_file();
+    }
+    update_progress();
+}
+
+void StandaloneFileTinderDialog::on_sort_order_toggled() {
+    if (sort_order_ == SortOrder::Ascending) {
+        sort_order_ = SortOrder::Descending;
+        sort_order_btn_->setText("Desc");
+    } else {
+        sort_order_ = SortOrder::Ascending;
+        sort_order_btn_->setText("Asc");
+    }
+    apply_sort();
+    rebuild_filtered_indices();
+    if (!filtered_indices_.empty()) {
+        show_current_file();
+    }
+    update_progress();
+}
+
+void StandaloneFileTinderDialog::on_folders_toggle_changed(int state) {
+    include_folders_ = (state == Qt::Checked);
+    scan_files();  // Re-scan with new settings
+    apply_sort();
+    rebuild_filtered_indices();
+    load_session_state();
+    if (!filtered_indices_.empty()) {
+        show_current_file();
+    }
+    update_progress();
+}
+
+void StandaloneFileTinderDialog::apply_sort() {
+    if (files_.empty()) return;
+    
+    auto compare_fn = [this](const FileToProcess& a, const FileToProcess& b) {
+        int cmp = 0;
+        switch (sort_field_) {
+            case FileSortField::Name:
+                cmp = a.name.compare(b.name, Qt::CaseInsensitive);
+                break;
+            case FileSortField::Size:
+                cmp = (a.size < b.size) ? -1 : (a.size > b.size) ? 1 : 0;
+                break;
+            case FileSortField::Type:
+                cmp = a.extension.compare(b.extension, Qt::CaseInsensitive);
+                break;
+            case FileSortField::DateModified:
+                cmp = (a.modified_datetime < b.modified_datetime) ? -1 : 
+                      (a.modified_datetime > b.modified_datetime) ? 1 : 0;
+                break;
+        }
+        return sort_order_ == SortOrder::Ascending ? cmp < 0 : cmp > 0;
+    };
+    
+    std::sort(files_.begin(), files_.end(), compare_fn);
+}
+
+void StandaloneFileTinderDialog::show_custom_extension_dialog() {
+    bool ok;
+    QString text = QInputDialog::getText(this, "Custom Filter",
+        "Enter file extensions separated by commas (e.g., txt,csv,log):",
+        QLineEdit::Normal, custom_extensions_.join(","), &ok);
+    
+    if (ok && !text.isEmpty()) {
+        custom_extensions_.clear();
+        QStringList parts = text.split(",", Qt::SkipEmptyParts);
+        for (const QString& part : parts) {
+            QString ext = part.trimmed().toLower();
+            if (!ext.startsWith(".")) ext = "." + ext;
+            custom_extensions_.append(ext);
+        }
+        rebuild_filtered_indices();
+        if (!filtered_indices_.empty()) {
+            show_current_file();
+        } else {
+            preview_label_->setText("No files match the specified extensions");
+            file_info_label_->setText("Extensions: " + custom_extensions_.join(", "));
+        }
+        update_progress();
+    }
+}
+
 // Filter implementation
 void StandaloneFileTinderDialog::on_filter_changed(int index) {
     FileFilterType filter = static_cast<FileFilterType>(filter_combo_->itemData(index).toInt());
+    
+    // Handle custom filter specially
+    if (filter == FileFilterType::Custom) {
+        show_custom_extension_dialog();
+        return;
+    }
+    
     apply_filter(filter);
 }
 
@@ -933,25 +1188,26 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
     
     switch (current_filter_) {
         case FileFilterType::Images:
-            return mime.startsWith("image/");
+            return !file.is_directory && mime.startsWith("image/");
         case FileFilterType::Videos:
-            return mime.startsWith("video/");
+            return !file.is_directory && mime.startsWith("video/");
         case FileFilterType::Audio:
-            return mime.startsWith("audio/");
+            return !file.is_directory && mime.startsWith("audio/");
         case FileFilterType::Documents:
-            return mime.startsWith("text/") || 
+            return !file.is_directory && (mime.startsWith("text/") || 
                    mime.contains("pdf") || 
                    mime.contains("document") ||
                    mime.contains("spreadsheet") ||
-                   mime.contains("presentation");
+                   mime.contains("presentation"));
         case FileFilterType::Archives:
-            return mime.contains("zip") || 
+            return !file.is_directory && (mime.contains("zip") || 
                    mime.contains("tar") || 
                    mime.contains("archive") ||
-                   mime.contains("compressed");
+                   mime.contains("compressed"));
         case FileFilterType::Other:
-            // Match anything not covered by other filters
-            return !mime.startsWith("image/") && 
+            // Match anything not covered by other filters (excluding directories)
+            return !file.is_directory &&
+                   !mime.startsWith("image/") && 
                    !mime.startsWith("video/") && 
                    !mime.startsWith("audio/") &&
                    !mime.startsWith("text/") &&
@@ -961,6 +1217,18 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
                    !mime.contains("presentation") &&
                    !mime.contains("zip") &&
                    !mime.contains("archive");
+        case FileFilterType::FoldersOnly:
+            return file.is_directory;
+        case FileFilterType::Custom:
+            // Match custom extensions
+            if (custom_extensions_.isEmpty()) return true;
+            QString ext = "." + file.extension.toLower();
+            for (const QString& custom_ext : custom_extensions_) {
+                if (ext == custom_ext || file.extension.toLower() == custom_ext.mid(1)) {
+                    return true;
+                }
+            }
+            return false;
         default:
             return true;
     }

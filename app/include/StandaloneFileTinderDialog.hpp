@@ -9,8 +9,11 @@
 #include <QHBoxLayout>
 #include <QListWidget>
 #include <QComboBox>
+#include <QLineEdit>
+#include <QCheckBox>
 #include <QString>
 #include <QStringList>
+#include <QDateTime>
 #include <vector>
 #include <memory>
 
@@ -24,9 +27,11 @@ struct FileToProcess {
     QString extension;
     qint64 size;
     QString modified_date;
+    QDateTime modified_datetime;  // For sorting
     QString decision;           // "pending", "keep", "delete", "skip", "move"
     QString destination_folder; // For move operations
     QString mime_type;          // MIME type for filtering
+    bool is_directory;          // For folder support
 };
 
 // File filter types
@@ -37,7 +42,22 @@ enum class FileFilterType {
     Audio,
     Documents,
     Archives,
-    Other
+    Other,
+    FoldersOnly,    // New: folders only
+    Custom          // New: custom extensions
+};
+
+// Sort options
+enum class FileSortField {
+    Name,
+    Size,
+    Type,
+    DateModified
+};
+
+enum class SortOrder {
+    Ascending,
+    Descending
 };
 
 class StandaloneFileTinderDialog : public QDialog {
@@ -62,6 +82,14 @@ protected:
     DatabaseManager& db_;
     FileFilterType current_filter_;
     
+    // Sorting
+    FileSortField sort_field_;
+    SortOrder sort_order_;
+    
+    // Custom filter
+    QStringList custom_extensions_;
+    bool include_folders_;
+    
     // Statistics
     int keep_count_;
     int delete_count_;
@@ -71,10 +99,14 @@ protected:
     // UI Components
     QLabel* preview_label_;
     QLabel* file_info_label_;
+    QLabel* file_icon_label_;      // Centered file icon
     QLabel* progress_label_;
     QLabel* stats_label_;
     QProgressBar* progress_bar_;
     QComboBox* filter_combo_;
+    QComboBox* sort_combo_;        // Sort field selector
+    QPushButton* sort_order_btn_;  // Asc/Desc toggle
+    QCheckBox* folders_checkbox_;  // Include folders toggle
     QLabel* shortcuts_label_;
     
     QPushButton* back_btn_;
@@ -94,11 +126,20 @@ protected:
     void scan_files();
     void load_session_state();
     void save_session_state();
+    void save_last_folder();      // New: persist last used folder
+    QString get_last_folder();    // New: retrieve last used folder
     
     // Filtering
     void apply_filter(FileFilterType filter);
     void rebuild_filtered_indices();
     bool file_matches_filter(const FileToProcess& file) const;
+    void show_custom_extension_dialog();  // New: custom extension picker
+    
+    // Sorting
+    void apply_sort();
+    void on_sort_changed(int index);
+    void on_sort_order_toggled();
+    void on_folders_toggle_changed(int state);
     
     // File display
     void show_current_file();
@@ -137,6 +178,7 @@ protected:
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;  // New: handle resize
     
 signals:
     void session_completed();
