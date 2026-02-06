@@ -1140,15 +1140,7 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
                 show_shortcuts_help();
             }
             break;
-        case Qt::Key_1:
-        case Qt::Key_2:
-        case Qt::Key_3:
-        case Qt::Key_4:
-        case Qt::Key_5:
-        case Qt::Key_6:
-            // Number keys 1-6 for filter types
-            filter_combo_->setCurrentIndex(event->key() - Qt::Key_1);
-            break;
+        // Note: Number keys 1-0 are reserved for Quick Access in Advanced Mode
         default:
             QDialog::keyPressEvent(event);
     }
@@ -1425,14 +1417,11 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <tr><td><span class='key'>Z</span></td><td>Undo last action</td></tr>
 <tr><td><span class='key'>P</span></td><td>Open image preview in separate window</td></tr>
 <tr><td><span class='key'>Enter</span></td><td>Finish review and execute</td></tr>
-<tr><td><span class='key'>1-6</span></td><td>Quick filter by file type</td></tr>
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
 <tr><td><span class='key'>Esc</span></td><td>Close dialog</td></tr>
 </table>
 <br>
-<b>Filters:</b><br>
-1 = All | 2 = Images | 3 = Videos | 4 = Audio | 5 = Documents | 6 = Archives<br>
-(Use the dropdown to select 'Folders Only' or 'Specify...' filters)
+<b>Tip:</b> Use the filter dropdown to filter by file type (Images, Videos, etc.) or specify custom extensions.
 )";
     
     help_dialog.setTextFormat(Qt::RichText);
