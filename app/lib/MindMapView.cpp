@@ -31,131 +31,79 @@ QRectF FolderNodeItem::boundingRect() const {
 void FolderNodeItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) {
     painter->setRenderHint(QPainter::Antialiasing);
     
-    // Determine background color
-    QColor bg_color(ui::colors::kNodeDefaultBg);
+    // Windows-like sleek styling - light background with darker text
+    QColor bg_color("#ffffff");
+    QColor border_color("#cccccc");
+    QColor text_color("#333333");
+    
     if (is_selected_) {
-        bg_color = QColor(ui::colors::kNodeSelectedBg);
-    } else if (node_->is_connected) {
-        bg_color = QColor(ui::colors::kNodeConnectedBg);
+        bg_color = QColor("#e8f4fc");
+        border_color = QColor("#0078d4");  // Windows blue
+        text_color = QColor("#0078d4");
+    } else if (is_hovered_) {
+        bg_color = QColor("#f5f5f5");
+        border_color = QColor("#999999");
     } else if (!node_->exists) {
-        bg_color = QColor(ui::colors::kNodeVirtualBg);
+        bg_color = QColor("#fff8e1");  // Light yellow for virtual
+        border_color = QColor("#ffc107");
     }
     
-    // Draw shadow if hovered
-    if (is_hovered_) {
-        painter->setBrush(QColor(0, 0, 0, 30));
-        painter->setPen(Qt::NoPen);
-        painter->drawRoundedRect(boundingRect().adjusted(3, 3, 3, 3), 
-                                 ui::dimensions::kNodeBorderRadius,
-                                 ui::dimensions::kNodeBorderRadius);
-    }
-    
-    // Main rectangle
+    // Main rectangle - clean, flat, Windows-like
     QRectF rect = boundingRect().adjusted(1, 1, -1, -1);
     
-    // Border style
+    // Simple border
+    QPen border_pen(border_color, is_selected_ ? 2 : 1);
     if (!node_->exists) {
-        QPen pen(bg_color.darker(120));
-        pen.setStyle(Qt::DashLine);
-        pen.setWidth(2);
-        painter->setPen(pen);
-    } else {
-        painter->setPen(QPen(bg_color.darker(130), 2));
+        border_pen.setStyle(Qt::DashLine);
     }
-    
-    // Scale effect on hover
-    if (is_hovered_) {
-        qreal scale = 1.03;
-        painter->save();
-        painter->translate(rect.center());
-        painter->scale(scale, scale);
-        painter->translate(-rect.center());
-    }
-    
+    painter->setPen(border_pen);
     painter->setBrush(bg_color);
-    painter->drawRoundedRect(rect, ui::dimensions::kNodeBorderRadius, ui::dimensions::kNodeBorderRadius);
+    painter->drawRect(rect);
     
-    // Folder icon
-    painter->setPen(Qt::white);
-    QFont icon_font("Segoe UI Symbol", 22);
+    // Folder icon (simple text-based)
+    painter->setPen(text_color);
+    QFont icon_font;
+    icon_font.setPointSize(14);
     painter->setFont(icon_font);
-    QString icon = node_->exists ? "📁" : "📂";
-    painter->drawText(QRectF(8, 8, 45, 45), Qt::AlignCenter, icon);
+    QString icon_text = node_->exists ? "[D]" : "[+]";
+    painter->drawText(QRectF(6, 0, 30, rect.height()), Qt::AlignVCenter | Qt::AlignLeft, icon_text);
     
-    // Display name
-    QFont name_font("Segoe UI", ui::fonts::kNodeTitleSize, QFont::Bold);
+    // Display name - clean text
+    QFont name_font;
+    name_font.setPointSize(11);
+    name_font.setBold(is_selected_);
     painter->setFont(name_font);
-    QFontMetrics fm(name_font);
+    QFontMetrics fm2(name_font);
     QString display_name = node_->display_name;
     if (display_name.isEmpty()) {
         display_name = QFileInfo(node_->path).fileName();
     }
-    QString elided = fm.elidedText(display_name, Qt::ElideMiddle, 
-                                   static_cast<int>(rect.width()) - 65);
-    painter->drawText(QRectF(55, 10, rect.width() - 65, 28), 
+    QString elided = fm2.elidedText(display_name, Qt::ElideMiddle, 
+                                   static_cast<int>(rect.width()) - 80);
+    painter->drawText(QRectF(36, 0, rect.width() - 80, rect.height()), 
                       Qt::AlignLeft | Qt::AlignVCenter, elided);
     
-    // Path hint
-    QFont path_font("Segoe UI", ui::fonts::kNodeSubtitleSize);
-    painter->setFont(path_font);
-    painter->setPen(QColor(255, 255, 255, 170));
-    QFontMetrics fm2(path_font);
-    QString short_path = node_->path;
-    if (short_path.length() > 35) {
-        short_path = "..." + short_path.right(32);
-    }
-    QString elided_path = fm2.elidedText(short_path, Qt::ElideMiddle, 
-                                         static_cast<int>(rect.width()) - 65);
-    painter->drawText(QRectF(55, 38, rect.width() - 65, 22), 
-                      Qt::AlignLeft | Qt::AlignVCenter, elided_path);
-    
-    // File count badge
+    // File count badge - simple text suffix
     if (node_->assigned_file_count > 0) {
-        QRectF badge(rect.width() - 38, 8, 32, 22);
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(QColor(255, 255, 255, 220));
-        painter->drawRoundedRect(badge, 11, 11);
-        
-        painter->setPen(bg_color.darker(140));
-        QFont badge_font("Segoe UI", 11, QFont::Bold);
-        painter->setFont(badge_font);
-        painter->drawText(badge, Qt::AlignCenter, 
-                          QString::number(node_->assigned_file_count));
+        QString count_text = QString(" (%1)").arg(node_->assigned_file_count);
+        QColor badge_color = is_selected_ ? QColor("#0078d4") : QColor("#666666");
+        painter->setPen(badge_color);
+        QFont count_font;
+        count_font.setPointSize(9);
+        painter->setFont(count_font);
+        painter->drawText(QRectF(rect.width() - 40, 0, 36, rect.height()), 
+                         Qt::AlignRight | Qt::AlignVCenter, count_text);
     }
     
-    // Connection indicator
-    if (node_->is_connected) {
-        painter->setBrush(Qt::white);
-        painter->setPen(Qt::NoPen);
-        painter->drawEllipse(QPointF(rect.width() - 14, rect.height() - 14), 7, 7);
-        
-        // Link icon inside
-        painter->setPen(QPen(bg_color, 1.5));
-        painter->drawLine(QPointF(rect.width() - 17, rect.height() - 14),
-                         QPointF(rect.width() - 11, rect.height() - 14));
-    }
-    
-    // Expand/collapse indicator if has children
+    // Expand/collapse indicator for children - simplified [+]/[-] style
     if (!node_->children.empty()) {
-        painter->setBrush(QColor(255, 255, 255, 200));
-        painter->setPen(Qt::NoPen);
-        QRectF exp_rect(rect.width() - 22, rect.height() / 2 - 8, 16, 16);
-        painter->drawEllipse(exp_rect);
-        
-        QPen indicator_pen(bg_color.darker(120), 2);
-        painter->setPen(indicator_pen);
-        // Draw horizontal line for both states (the minus part)
-        painter->drawLine(exp_rect.center() + QPointF(-4, 0),
-                        exp_rect.center() + QPointF(4, 0));
-        // Add vertical line only when collapsed to form a plus sign
-        if (!is_expanded_) {
-            painter->drawLine(exp_rect.center() + QPointF(0, -4),
-                            exp_rect.center() + QPointF(0, 4));
-        }
-    }
-    
-    if (is_hovered_) {
-        painter->restore();
+        QString expand_text = is_expanded_ ? "[-]" : "[+]";
+        painter->setPen(QColor("#666666"));
+        QFont expand_font;
+        expand_font.setPointSize(9);
+        painter->setFont(expand_font);
+        painter->drawText(QRectF(rect.width() - 25, 0, 22, rect.height()), 
+                         Qt::AlignCenter, expand_text);
     }
 }
 

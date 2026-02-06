@@ -20,6 +20,8 @@ set(SOURCES
     app/lib/FileTinderExecutor.cpp
     app/lib/FolderNodeWidget.cpp
     app/lib/MindMapView.cpp
+    app/lib/AppLogger.cpp
+    app/lib/DiagnosticTool.cpp
 )
 
 # Header files
@@ -32,6 +34,8 @@ set(HEADERS
     app/include/FolderNodeWidget.hpp
     app/include/MindMapView.hpp
     app/include/ui_constants.hpp
+    app/include/AppLogger.hpp
+    app/include/DiagnosticTool.hpp
 )
 
 # Resources

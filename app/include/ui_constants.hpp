@@ -16,16 +16,22 @@ namespace ui::dimensions {
     constexpr int kQuickAccessBarHeight = 60;
     constexpr int kQuickAccessButtonWidth = 120;
     
-    // Mind Map Node sizes (larger for visual orientation)
-    constexpr int kNodeWidth = 180;
-    constexpr int kNodeHeight = 80;
-    constexpr int kNodeSpacingHorizontal = 60;
-    constexpr int kNodeSpacingVertical = 40;
-    constexpr int kNodeBorderRadius = 12;
+    // Mind Map Node sizes (sleeker, text-based, Windows-like)
+    constexpr int kNodeWidth = 200;
+    constexpr int kNodeHeight = 50;
+    constexpr int kNodeSpacingHorizontal = 40;
+    constexpr int kNodeSpacingVertical = 20;
+    constexpr int kNodeBorderRadius = 4;
     
     // File preview
     constexpr int kPreviewMaxWidth = 500;
     constexpr int kPreviewMaxHeight = 400;
+    
+    // Main action buttons (2x larger for Keep/Delete)
+    constexpr int kMainButtonWidth = 200;
+    constexpr int kMainButtonHeight = 100;
+    constexpr int kSecondaryButtonWidth = 100;
+    constexpr int kSecondaryButtonHeight = 50;
 }
 
 namespace ui::colors {

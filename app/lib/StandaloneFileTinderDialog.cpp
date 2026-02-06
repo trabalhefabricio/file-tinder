@@ -1,6 +1,7 @@
 #include "StandaloneFileTinderDialog.hpp"
 #include "DatabaseManager.hpp"
 #include "FileTinderExecutor.hpp"
+#include "AppLogger.hpp"
 #include "ui_constants.hpp"
 #include <QDir>
 #include <QFileInfo>
@@ -161,50 +162,64 @@ void StandaloneFileTinderDialog::setup_ui() {
     );
     main_layout->addWidget(stats_label_);
     
-    // Action buttons
+    // Action buttons - Main area with large Delete/Keep buttons
     auto* buttons_widget = new QWidget();
     auto* buttons_layout = new QHBoxLayout(buttons_widget);
-    buttons_layout->setSpacing(15);
+    buttons_layout->setSpacing(20);
+    buttons_layout->setContentsMargins(10, 10, 10, 10);
     
-    back_btn_ = new QPushButton("↑ Back");
-    back_btn_->setMinimumSize(100, 50);
+    // Left column: Back button (secondary, smaller)
+    auto* left_col = new QVBoxLayout();
+    back_btn_ = new QPushButton("Back\n[Backspace]");
+    back_btn_->setMinimumSize(ui::dimensions::kSecondaryButtonWidth, 
+                              ui::dimensions::kSecondaryButtonHeight);
     back_btn_->setStyleSheet(
-        "QPushButton { font-size: 14px; font-weight: bold; padding: 10px; "
-        "background-color: #95a5a6; border-radius: 8px; }"
-        "QPushButton:hover { background-color: #7f8c8d; }"
-    );
+        "QPushButton { font-size: 12px; font-weight: bold; padding: 8px; "
+        "background-color: #7f8c8d; border: 1px solid #6c7a7d; color: white; }"
+        "QPushButton:hover { background-color: #95a5a6; }");
     connect(back_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_back);
-    buttons_layout->addWidget(back_btn_);
+    left_col->addWidget(back_btn_);
+    left_col->addStretch();
+    buttons_layout->addLayout(left_col);
     
-    delete_btn_ = new QPushButton("← Delete");
-    delete_btn_->setMinimumSize(100, 50);
+    // CENTER LEFT: Large DELETE button (2x size)
+    delete_btn_ = new QPushButton("DELETE\n[Left Arrow]");
+    delete_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, 
+                                ui::dimensions::kMainButtonHeight);
     delete_btn_->setStyleSheet(QString(
-        "QPushButton { font-size: 14px; font-weight: bold; padding: 10px; "
-        "background-color: %1; border-radius: 8px; color: white; }"
-        "QPushButton:hover { background-color: #c0392b; }"
+        "QPushButton { font-size: 18px; font-weight: bold; padding: 15px; "
+        "background-color: %1; border: 2px solid #c0392b; color: white; }"
+        "QPushButton:hover { background-color: #c0392b; border-color: #a93226; }"
     ).arg(ui::colors::kDeleteColor));
     connect(delete_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_delete);
-    buttons_layout->addWidget(delete_btn_);
+    buttons_layout->addWidget(delete_btn_, 2);
     
-    skip_btn_ = new QPushButton("↓ Skip");
-    skip_btn_->setMinimumSize(100, 50);
+    // CENTER: Skip button (between the two main buttons, smaller)
+    skip_btn_ = new QPushButton("Skip\n[Down]");
+    skip_btn_->setMinimumSize(ui::dimensions::kSecondaryButtonWidth, 
+                              ui::dimensions::kSecondaryButtonHeight);
     skip_btn_->setStyleSheet(QString(
-        "QPushButton { font-size: 14px; font-weight: bold; padding: 10px; "
-        "background-color: %1; border-radius: 8px; color: white; }"
+        "QPushButton { font-size: 12px; font-weight: bold; padding: 8px; "
+        "background-color: %1; border: 1px solid #d68910; color: white; }"
         "QPushButton:hover { background-color: #e67e22; }"
     ).arg(ui::colors::kSkipColor));
     connect(skip_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_skip);
     buttons_layout->addWidget(skip_btn_);
     
-    keep_btn_ = new QPushButton("→ Keep");
-    keep_btn_->setMinimumSize(100, 50);
+    // CENTER RIGHT: Large KEEP button (2x size)
+    keep_btn_ = new QPushButton("KEEP\n[Right Arrow]");
+    keep_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, 
+                              ui::dimensions::kMainButtonHeight);
     keep_btn_->setStyleSheet(QString(
-        "QPushButton { font-size: 14px; font-weight: bold; padding: 10px; "
-        "background-color: %1; border-radius: 8px; color: white; }"
-        "QPushButton:hover { background-color: #27ae60; }"
+        "QPushButton { font-size: 18px; font-weight: bold; padding: 15px; "
+        "background-color: %1; border: 2px solid #27ae60; color: white; }"
+        "QPushButton:hover { background-color: #27ae60; border-color: #1e8449; }"
     ).arg(ui::colors::kKeepColor));
     connect(keep_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_keep);
-    buttons_layout->addWidget(keep_btn_);
+    buttons_layout->addWidget(keep_btn_, 2);
+    
+    // Right column: placeholder for symmetry
+    buttons_layout->addSpacing(ui::dimensions::kSecondaryButtonWidth);
     
     main_layout->addWidget(buttons_widget);
     
@@ -449,81 +464,120 @@ int StandaloneFileTinderDialog::get_current_file_index() const {
 }
 
 void StandaloneFileTinderDialog::on_keep() {
-    int file_idx = get_current_file_index();
-    if (file_idx < 0) return;
-    
-    auto& file = files_[file_idx];
-    if (file.decision != "pending") {
-        update_decision_count(file.decision, -1);
+    try {
+        int file_idx = get_current_file_index();
+        if (file_idx < 0) return;
+        
+        auto& file = files_[file_idx];
+        LOG_INFO("BasicMode", QString("Marking file as KEEP: %1").arg(file.name));
+        
+        if (file.decision != "pending") {
+            update_decision_count(file.decision, -1);
+        }
+        
+        file.decision = "keep";
+        keep_count_++;
+        
+        animate_swipe(true);
+        advance_to_next();
+    } catch (const std::exception& ex) {
+        LOG_ERROR("BasicMode", QString("Error in on_keep: %1").arg(ex.what()));
+        QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
     }
-    
-    file.decision = "keep";
-    keep_count_++;
-    
-    animate_swipe(true);
-    advance_to_next();
 }
 
 void StandaloneFileTinderDialog::on_delete() {
-    int file_idx = get_current_file_index();
-    if (file_idx < 0) return;
-    
-    auto& file = files_[file_idx];
-    if (file.decision != "pending") {
-        update_decision_count(file.decision, -1);
+    try {
+        int file_idx = get_current_file_index();
+        if (file_idx < 0) return;
+        
+        auto& file = files_[file_idx];
+        LOG_INFO("BasicMode", QString("Marking file as DELETE: %1").arg(file.name));
+        
+        if (file.decision != "pending") {
+            update_decision_count(file.decision, -1);
+        }
+        
+        file.decision = "delete";
+        delete_count_++;
+        
+        animate_swipe(true);
+        advance_to_next();
+    } catch (const std::exception& ex) {
+        LOG_ERROR("BasicMode", QString("Error in on_delete: %1").arg(ex.what()));
+        QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
     }
-    
-    file.decision = "delete";
-    delete_count_++;
-    
-    animate_swipe(true);
-    advance_to_next();
 }
 
 void StandaloneFileTinderDialog::on_skip() {
-    int file_idx = get_current_file_index();
-    if (file_idx < 0) return;
-    
-    auto& file = files_[file_idx];
-    if (file.decision != "pending") {
-        update_decision_count(file.decision, -1);
+    try {
+        int file_idx = get_current_file_index();
+        if (file_idx < 0) return;
+        
+        auto& file = files_[file_idx];
+        LOG_DEBUG("BasicMode", QString("Skipping file: %1").arg(file.name));
+        
+        if (file.decision != "pending") {
+            update_decision_count(file.decision, -1);
+        }
+        
+        file.decision = "skip";
+        skip_count_++;
+        
+        animate_swipe(true);
+        advance_to_next();
+    } catch (const std::exception& ex) {
+        LOG_ERROR("BasicMode", QString("Error in on_skip: %1").arg(ex.what()));
+        QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
     }
-    
-    file.decision = "skip";
-    skip_count_++;
-    
-    animate_swipe(true);
-    advance_to_next();
 }
 
 void StandaloneFileTinderDialog::on_back() {
-    animate_swipe(false);
-    go_to_previous();
+    try {
+        LOG_DEBUG("BasicMode", "Going back to previous file");
+        animate_swipe(false);
+        go_to_previous();
+    } catch (const std::exception& ex) {
+        LOG_ERROR("BasicMode", QString("Error in on_back: %1").arg(ex.what()));
+    }
 }
 
 void StandaloneFileTinderDialog::on_move_to_folder() {
-    int file_idx = get_current_file_index();
-    if (file_idx < 0) return;
-    
-    QString folder = show_folder_picker();
-    if (folder.isEmpty()) return;
-    
-    auto& file = files_[file_idx];
-    if (file.decision != "pending") {
-        update_decision_count(file.decision, -1);
+    try {
+        int file_idx = get_current_file_index();
+        if (file_idx < 0) return;
+        
+        QString folder = show_folder_picker();
+        if (folder.isEmpty()) return;
+        
+        auto& file = files_[file_idx];
+        LOG_INFO("BasicMode", QString("Moving file %1 to folder: %2").arg(file.name, folder));
+        
+        if (file.decision != "pending") {
+            update_decision_count(file.decision, -1);
+        }
+        
+        file.decision = "move";
+        file.destination_folder = folder;
+        move_count_++;
+        
+        db_.add_recent_folder(folder);
+        
+        advance_to_next();
+    } catch (const std::exception& ex) {
+        LOG_ERROR("BasicMode", QString("Error in on_move_to_folder: %1").arg(ex.what()));
+        QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
     }
-    
-    file.decision = "move";
-    file.destination_folder = folder;
-    move_count_++;
-    
-    db_.add_recent_folder(folder);
-    
-    advance_to_next();
 }
 
 void StandaloneFileTinderDialog::on_finish() {
-    show_review_summary();
+    try {
+        LOG_INFO("BasicMode", "Finishing review, showing summary");
+        show_review_summary();
+    } catch (const std::exception& ex) {
+        LOG_ERROR("BasicMode", QString("Error in on_finish: %1").arg(ex.what()));
+        QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
+    }
 }
 
 void StandaloneFileTinderDialog::advance_to_next() {

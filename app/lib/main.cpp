@@ -2,227 +2,244 @@
 #include <QDialog>
 #include <QFileDialog>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QPushButton>
 #include <QLabel>
 #include <QMessageBox>
 #include <QStyleFactory>
 #include <QDir>
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
 
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
 #include "AdvancedFileTinderDialog.hpp"
+#include "AppLogger.hpp"
+#include "DiagnosticTool.hpp"
 
-class MainWindow : public QDialog {
+class FileTinderLauncher : public QDialog {
     Q_OBJECT
     
 public:
-    MainWindow(QWidget* parent = nullptr) : QDialog(parent), db_() {
-        setWindowTitle("File Tinder");
-        setMinimumSize(500, 400);
+    FileTinderLauncher(QWidget* parent_widget = nullptr) 
+        : QDialog(parent_widget)
+        , db_manager_()
+        , chosen_path_() {
         
-        if (!db_.initialize()) {
-            QMessageBox::critical(this, "Error", "Failed to initialize database.");
+        setWindowTitle("File Tinder Launcher");
+        setMinimumSize(550, 450);
+        
+        LOG_INFO("Launcher", "Application starting");
+        
+        if (!db_manager_.initialize()) {
+            LOG_ERROR("Launcher", "Database initialization failed");
+            QMessageBox::critical(this, "Database Error", "Could not initialize the database.");
         }
         
-        setup_ui();
+        build_interface();
     }
     
 private:
-    DatabaseManager db_;
-    QString selected_folder_;
+    DatabaseManager db_manager_;
+    QString chosen_path_;
+    QLabel* path_indicator_;
     
-    void setup_ui() {
-        auto* layout = new QVBoxLayout(this);
-        layout->setContentsMargins(30, 30, 30, 30);
-        layout->setSpacing(20);
+    void build_interface() {
+        auto* root_layout = new QVBoxLayout(this);
+        root_layout->setContentsMargins(25, 25, 25, 25);
+        root_layout->setSpacing(18);
         
-        // Title
-        auto* title = new QLabel("📁 FILE TINDER");
-        title->setStyleSheet(
-            "font-size: 32px; font-weight: bold; color: #3498db;"
+        // App header
+        auto* app_title = new QLabel("FILE TINDER");
+        app_title->setStyleSheet("font-size: 28px; font-weight: bold; color: #0078d4;");
+        app_title->setAlignment(Qt::AlignCenter);
+        root_layout->addWidget(app_title);
+        
+        auto* app_desc = new QLabel("Organize files with swipe-style sorting");
+        app_desc->setStyleSheet("font-size: 13px; color: #888888;");
+        app_desc->setAlignment(Qt::AlignCenter);
+        root_layout->addWidget(app_desc);
+        
+        root_layout->addSpacing(15);
+        
+        // Folder picker section
+        auto* picker_label = new QLabel("Choose folder to organize:");
+        picker_label->setStyleSheet("font-weight: bold; font-size: 12px;");
+        root_layout->addWidget(picker_label);
+        
+        auto* picker_row = new QHBoxLayout();
+        
+        path_indicator_ = new QLabel("(none selected)");
+        path_indicator_->setStyleSheet(
+            "padding: 8px 12px; background-color: #2d2d2d; border: 1px solid #404040; color: #aaaaaa;"
         );
-        title->setAlignment(Qt::AlignCenter);
-        layout->addWidget(title);
+        path_indicator_->setWordWrap(true);
+        picker_row->addWidget(path_indicator_, 1);
         
-        // Subtitle
-        auto* subtitle = new QLabel("Swipe-style file organization tool");
-        subtitle->setStyleSheet("font-size: 14px; color: #7f8c8d;");
-        subtitle->setAlignment(Qt::AlignCenter);
-        layout->addWidget(subtitle);
-        
-        layout->addSpacing(20);
-        
-        // Folder selection
-        auto* folder_group = new QWidget();
-        auto* folder_layout = new QVBoxLayout(folder_group);
-        folder_layout->setContentsMargins(0, 0, 0, 0);
-        
-        auto* folder_label = new QLabel("Select a folder to organize:");
-        folder_label->setStyleSheet("font-weight: bold;");
-        folder_layout->addWidget(folder_label);
-        
-        auto* folder_btn_layout = new QHBoxLayout();
-        
-        auto* folder_display = new QLabel("No folder selected");
-        folder_display->setStyleSheet(
-            "padding: 10px; background-color: #34495e; border-radius: 5px; color: #bdc3c7;"
+        auto* pick_btn = new QPushButton("Select...");
+        pick_btn->setStyleSheet(
+            "QPushButton { padding: 8px 16px; background-color: #0078d4; color: white; border: none; }"
+            "QPushButton:hover { background-color: #106ebe; }"
         );
-        folder_display->setWordWrap(true);
-        folder_btn_layout->addWidget(folder_display, 1);
+        connect(pick_btn, &QPushButton::clicked, this, &FileTinderLauncher::pick_folder);
+        picker_row->addWidget(pick_btn);
         
-        auto* browse_btn = new QPushButton("Browse...");
-        browse_btn->setStyleSheet(
-            "QPushButton { padding: 10px 20px; background-color: #3498db; "
-            "border-radius: 5px; color: white; }"
-            "QPushButton:hover { background-color: #2980b9; }"
+        root_layout->addLayout(picker_row);
+        
+        root_layout->addStretch();
+        
+        // Mode buttons
+        auto* modes_label = new QLabel("Choose mode:");
+        modes_label->setStyleSheet("font-weight: bold; font-size: 12px;");
+        root_layout->addWidget(modes_label);
+        
+        auto* modes_row = new QHBoxLayout();
+        modes_row->setSpacing(12);
+        
+        auto* basic_mode_btn = new QPushButton("Basic Mode\n(Simple sorting)");
+        basic_mode_btn->setMinimumSize(180, 70);
+        basic_mode_btn->setStyleSheet(
+            "QPushButton { padding: 12px; background-color: #107c10; color: white; border: none; font-size: 13px; }"
+            "QPushButton:hover { background-color: #0e6b0e; }"
         );
-        folder_btn_layout->addWidget(browse_btn);
+        connect(basic_mode_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_basic);
+        modes_row->addWidget(basic_mode_btn);
         
-        folder_layout->addLayout(folder_btn_layout);
-        layout->addWidget(folder_group);
+        auto* adv_mode_btn = new QPushButton("Advanced Mode\n(Folder tree view)");
+        adv_mode_btn->setMinimumSize(180, 70);
+        adv_mode_btn->setStyleSheet(
+            "QPushButton { padding: 12px; background-color: #5c2d91; color: white; border: none; font-size: 13px; }"
+            "QPushButton:hover { background-color: #4a2473; }"
+        );
+        connect(adv_mode_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_advanced);
+        modes_row->addWidget(adv_mode_btn);
         
-        connect(browse_btn, &QPushButton::clicked, this, [this, folder_display]() {
-            QString folder = QFileDialog::getExistingDirectory(
-                this, "Select Folder to Organize", QDir::homePath()
+        root_layout->addLayout(modes_row);
+        
+        // Diagnostics button
+        auto* tools_row = new QHBoxLayout();
+        tools_row->addStretch();
+        
+        auto* diag_btn = new QPushButton("Diagnostics");
+        diag_btn->setStyleSheet(
+            "QPushButton { padding: 6px 12px; background-color: #4a4a4a; color: #cccccc; border: 1px solid #555555; }"
+            "QPushButton:hover { background-color: #555555; }"
+        );
+        connect(diag_btn, &QPushButton::clicked, this, &FileTinderLauncher::open_diagnostics);
+        tools_row->addWidget(diag_btn);
+        
+        root_layout->addLayout(tools_row);
+        
+        // Hotkey hint
+        auto* hint_text = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | M=Move");
+        hint_text->setStyleSheet("color: #666666; font-size: 10px; padding-top: 8px;");
+        hint_text->setAlignment(Qt::AlignCenter);
+        root_layout->addWidget(hint_text);
+    }
+    
+    void pick_folder() {
+        QString path = QFileDialog::getExistingDirectory(this, "Pick Folder", QDir::homePath());
+        if (!path.isEmpty()) {
+            chosen_path_ = path;
+            path_indicator_->setText(path);
+            path_indicator_->setStyleSheet(
+                "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
             );
-            if (!folder.isEmpty()) {
-                selected_folder_ = folder;
-                folder_display->setText(folder);
-                folder_display->setStyleSheet(
-                    "padding: 10px; background-color: #27ae60; border-radius: 5px; color: white;"
-                );
-            }
-        });
-        
-        layout->addStretch();
-        
-        // Mode selection buttons
-        auto* mode_label = new QLabel("Select Mode:");
-        mode_label->setStyleSheet("font-weight: bold;");
-        layout->addWidget(mode_label);
-        
-        auto* mode_layout = new QHBoxLayout();
-        
-        auto* basic_btn = new QPushButton("🎯 Basic Mode\nSimple swipe sorting");
-        basic_btn->setMinimumSize(200, 80);
-        basic_btn->setStyleSheet(
-            "QPushButton { padding: 15px; background-color: #3498db; "
-            "border-radius: 10px; color: white; font-size: 14px; }"
-            "QPushButton:hover { background-color: #2980b9; }"
-        );
-        mode_layout->addWidget(basic_btn);
-        
-        auto* advanced_btn = new QPushButton("🌳 Advanced Mode\nVisual folder tree");
-        advanced_btn->setMinimumSize(200, 80);
-        advanced_btn->setStyleSheet(
-            "QPushButton { padding: 15px; background-color: #9b59b6; "
-            "border-radius: 10px; color: white; font-size: 14px; }"
-            "QPushButton:hover { background-color: #8e44ad; }"
-        );
-        mode_layout->addWidget(advanced_btn);
-        
-        layout->addLayout(mode_layout);
-        
-        connect(basic_btn, &QPushButton::clicked, this, &MainWindow::start_basic_mode);
-        connect(advanced_btn, &QPushButton::clicked, this, &MainWindow::start_advanced_mode);
-        
-        // Instructions
-        auto* instructions = new QLabel(
-            "Keyboard Shortcuts:\n"
-            "→ Keep  |  ← Delete  |  ↓ Skip  |  ↑ Back  |  M Move to folder"
-        );
-        instructions->setStyleSheet("color: #7f8c8d; font-size: 11px; padding: 10px;");
-        instructions->setAlignment(Qt::AlignCenter);
-        layout->addWidget(instructions);
+            LOG_INFO("Launcher", QString("Folder selected: %1").arg(path));
+        }
     }
     
-    void start_basic_mode() {
-        if (selected_folder_.isEmpty()) {
-            QMessageBox::warning(this, "No Folder Selected", 
-                                "Please select a folder to organize first.");
-            return;
+    bool validate_folder() {
+        if (chosen_path_.isEmpty()) {
+            QMessageBox::warning(this, "No Folder", "Please select a folder first.");
+            return false;
         }
         
-        QDir dir(selected_folder_);
-        QStringList files = dir.entryList(QDir::Files);
-        if (files.isEmpty()) {
-            QMessageBox::information(this, "No Files", 
-                                    "The selected folder contains no files to organize.");
-            return;
+        QDir folder(chosen_path_);
+        if (folder.entryList(QDir::Files).isEmpty()) {
+            QMessageBox::information(this, "Empty Folder", "This folder has no files to sort.");
+            return false;
         }
         
-        auto* dialog = new StandaloneFileTinderDialog(selected_folder_, db_, this);
-        dialog->initialize();  // Initialize after construction
-        
-        connect(dialog, &StandaloneFileTinderDialog::switch_to_advanced_mode, this, [this, dialog]() {
-            dialog->close();
-            start_advanced_mode();
-        });
-        
-        dialog->exec();
-        delete dialog;
+        return true;
     }
     
-    void start_advanced_mode() {
-        if (selected_folder_.isEmpty()) {
-            QMessageBox::warning(this, "No Folder Selected", 
-                                "Please select a folder to organize first.");
-            return;
-        }
+    void launch_basic() {
+        if (!validate_folder()) return;
         
-        QDir dir(selected_folder_);
-        QStringList files = dir.entryList(QDir::Files);
-        if (files.isEmpty()) {
-            QMessageBox::information(this, "No Files", 
-                                    "The selected folder contains no files to organize.");
-            return;
-        }
+        LOG_INFO("Launcher", "Starting basic mode");
         
-        auto* dialog = new AdvancedFileTinderDialog(selected_folder_, db_, this);
-        dialog->initialize();  // Initialize after construction
+        auto* dlg = new StandaloneFileTinderDialog(chosen_path_, db_manager_, this);
+        dlg->initialize();
         
-        connect(dialog, &AdvancedFileTinderDialog::switch_to_basic_mode, this, [this, dialog]() {
-            dialog->close();
-            start_basic_mode();
+        connect(dlg, &StandaloneFileTinderDialog::switch_to_advanced_mode, this, [this, dlg]() {
+            dlg->close();
+            launch_advanced();
         });
         
-        dialog->exec();
-        delete dialog;
+        dlg->exec();
+        dlg->deleteLater();
+    }
+    
+    void launch_advanced() {
+        if (!validate_folder()) return;
+        
+        LOG_INFO("Launcher", "Starting advanced mode");
+        
+        auto* dlg = new AdvancedFileTinderDialog(chosen_path_, db_manager_, this);
+        dlg->initialize();
+        
+        connect(dlg, &AdvancedFileTinderDialog::switch_to_basic_mode, this, [this, dlg]() {
+            dlg->close();
+            launch_basic();
+        });
+        
+        dlg->exec();
+        dlg->deleteLater();
+    }
+    
+    void open_diagnostics() {
+        LOG_INFO("Launcher", "Opening diagnostic tool");
+        DiagnosticTool diag(db_manager_, this);
+        diag.exec();
     }
 };
 
 int main(int argc, char* argv[]) {
-    QApplication app(argc, argv);
+    QApplication qt_app(argc, argv);
     
-    // Set application info
-    app.setApplicationName("File Tinder");
-    app.setApplicationVersion("1.0.0");
-    app.setOrganizationName("FileTinder");
+    qt_app.setApplicationName("File Tinder");
+    qt_app.setApplicationVersion("1.0.0");
+    qt_app.setOrganizationName("FileTinderApp");
     
-    // Apply dark fusion style
-    app.setStyle(QStyleFactory::create("Fusion"));
+    // Initialize logging
+    AppLogger::instance().set_minimum_severity(LogSeverity::Debug);
+    LOG_INFO("Main", "File Tinder application started");
     
-    QPalette dark_palette;
-    dark_palette.setColor(QPalette::Window, QColor(53, 53, 53));
-    dark_palette.setColor(QPalette::WindowText, Qt::white);
-    dark_palette.setColor(QPalette::Base, QColor(42, 42, 42));
-    dark_palette.setColor(QPalette::AlternateBase, QColor(66, 66, 66));
-    dark_palette.setColor(QPalette::ToolTipBase, Qt::white);
-    dark_palette.setColor(QPalette::ToolTipText, Qt::white);
-    dark_palette.setColor(QPalette::Text, Qt::white);
-    dark_palette.setColor(QPalette::Button, QColor(53, 53, 53));
-    dark_palette.setColor(QPalette::ButtonText, Qt::white);
-    dark_palette.setColor(QPalette::BrightText, Qt::red);
-    dark_palette.setColor(QPalette::Link, QColor(42, 130, 218));
-    dark_palette.setColor(QPalette::Highlight, QColor(42, 130, 218));
-    dark_palette.setColor(QPalette::HighlightedText, Qt::black);
+    // Use Fusion style for consistent look
+    qt_app.setStyle(QStyleFactory::create("Fusion"));
     
-    app.setPalette(dark_palette);
+    // Custom color scheme
+    QPalette app_colors;
+    app_colors.setColor(QPalette::Window, QColor(45, 45, 45));
+    app_colors.setColor(QPalette::WindowText, QColor(230, 230, 230));
+    app_colors.setColor(QPalette::Base, QColor(35, 35, 35));
+    app_colors.setColor(QPalette::AlternateBase, QColor(55, 55, 55));
+    app_colors.setColor(QPalette::Text, QColor(230, 230, 230));
+    app_colors.setColor(QPalette::Button, QColor(50, 50, 50));
+    app_colors.setColor(QPalette::ButtonText, QColor(230, 230, 230));
+    app_colors.setColor(QPalette::Highlight, QColor(0, 120, 212));
+    app_colors.setColor(QPalette::HighlightedText, QColor(255, 255, 255));
+    qt_app.setPalette(app_colors);
     
-    MainWindow window;
-    window.show();
+    FileTinderLauncher launcher_window;
+    launcher_window.show();
     
-    return app.exec();
+    int exit_code = qt_app.exec();
+    
+    LOG_INFO("Main", "Application exiting");
+    return exit_code;
 }
 
 #include "main.moc"
