@@ -2,6 +2,7 @@
 #include "DatabaseManager.hpp"
 #include "FileTinderExecutor.hpp"
 #include "AppLogger.hpp"
+#include "ImagePreviewWindow.hpp"
 #include "ui_constants.hpp"
 #include <QDir>
 #include <QFileInfo>
@@ -42,10 +43,13 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , delete_count_(0)
     , skip_count_(0)
     , move_count_(0)
+    , image_preview_window_(nullptr)
     , file_icon_label_(nullptr)
     , sort_combo_(nullptr)
     , sort_order_btn_(nullptr)
     , folders_checkbox_(nullptr)
+    , undo_btn_(nullptr)
+    , preview_btn_(nullptr)
     , swipe_animation_(nullptr) {
     
     setWindowTitle("File Tinder - Basic Mode");
@@ -325,21 +329,35 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     main_layout->addWidget(action_widget);
     
-    // Bottom bar: Move and Finish buttons
+    // Bottom bar: Undo, Preview, and Finish buttons
     auto* bottom_bar = new QWidget();
     auto* bottom_layout = new QHBoxLayout(bottom_bar);
     bottom_layout->setContentsMargins(0, 5, 0, 0);
     bottom_layout->setSpacing(15);
     
-    move_btn_ = new QPushButton("Move to Folder...");
-    move_btn_->setFixedHeight(36);
-    move_btn_->setStyleSheet(QString(
+    // Undo button (replaces Move to Folder in Basic Mode)
+    undo_btn_ = new QPushButton("Undo [Z]");
+    undo_btn_->setFixedHeight(36);
+    undo_btn_->setStyleSheet(
+        "QPushButton { font-size: 12px; padding: 8px 15px; "
+        "background-color: #9b59b6; border-radius: 4px; color: white; }"
+        "QPushButton:hover { background-color: #8e44ad; }"
+        "QPushButton:disabled { background-color: #5d4e6e; color: #888; }"
+    );
+    undo_btn_->setEnabled(false);  // Disabled until there's something to undo
+    connect(undo_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_undo);
+    bottom_layout->addWidget(undo_btn_);
+    
+    // Preview button (for opening images in separate window)
+    preview_btn_ = new QPushButton("Preview [P]");
+    preview_btn_->setFixedHeight(36);
+    preview_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: %1; border-radius: 4px; color: white; }"
         "QPushButton:hover { background-color: #2980b9; }"
     ).arg(ui::colors::kMoveColor));
-    connect(move_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_move_to_folder);
-    bottom_layout->addWidget(move_btn_);
+    connect(preview_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_show_preview);
+    bottom_layout->addWidget(preview_btn_);
     
     bottom_layout->addStretch();
     
@@ -356,7 +374,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_layout->addWidget(bottom_bar);
     
     // Keyboard shortcuts hint
-    shortcuts_label_ = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | M=Move | ?=Help");
+    shortcuts_label_ = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | Z=Undo | P=Preview | ?=Help");
     shortcuts_label_->setAlignment(Qt::AlignCenter);
     shortcuts_label_->setStyleSheet("color: #7f8c8d; font-size: 10px;");
     main_layout->addWidget(shortcuts_label_);
@@ -615,6 +633,21 @@ int StandaloneFileTinderDialog::get_current_file_index() const {
     return filtered_indices_[current_filtered_index_];
 }
 
+void StandaloneFileTinderDialog::record_action(int file_index, const QString& old_decision, 
+                                               const QString& new_decision, const QString& dest_folder) {
+    ActionRecord record;
+    record.file_index = file_index;
+    record.previous_decision = old_decision;
+    record.new_decision = new_decision;
+    record.destination_folder = dest_folder;
+    undo_stack_.push_back(record);
+    
+    // Enable undo button
+    if (undo_btn_) {
+        undo_btn_->setEnabled(true);
+    }
+}
+
 void StandaloneFileTinderDialog::on_keep() {
     try {
         int file_idx = get_current_file_index();
@@ -623,12 +656,16 @@ void StandaloneFileTinderDialog::on_keep() {
         auto& file = files_[file_idx];
         LOG_INFO("BasicMode", QString("Marking file as KEEP: %1").arg(file.name));
         
-        if (file.decision != "pending") {
-            update_decision_count(file.decision, -1);
+        QString old_decision = file.decision;
+        if (old_decision != "pending") {
+            update_decision_count(old_decision, -1);
         }
         
         file.decision = "keep";
         keep_count_++;
+        
+        // Record for undo
+        record_action(file_idx, old_decision, "keep");
         
         animate_swipe(true);
         advance_to_next();
@@ -646,12 +683,16 @@ void StandaloneFileTinderDialog::on_delete() {
         auto& file = files_[file_idx];
         LOG_INFO("BasicMode", QString("Marking file as DELETE: %1").arg(file.name));
         
-        if (file.decision != "pending") {
-            update_decision_count(file.decision, -1);
+        QString old_decision = file.decision;
+        if (old_decision != "pending") {
+            update_decision_count(old_decision, -1);
         }
         
         file.decision = "delete";
         delete_count_++;
+        
+        // Record for undo
+        record_action(file_idx, old_decision, "delete");
         
         animate_swipe(true);
         advance_to_next();
@@ -669,12 +710,16 @@ void StandaloneFileTinderDialog::on_skip() {
         auto& file = files_[file_idx];
         LOG_DEBUG("BasicMode", QString("Skipping file: %1").arg(file.name));
         
-        if (file.decision != "pending") {
-            update_decision_count(file.decision, -1);
+        QString old_decision = file.decision;
+        if (old_decision != "pending") {
+            update_decision_count(old_decision, -1);
         }
         
         file.decision = "skip";
         skip_count_++;
+        
+        // Record for undo
+        record_action(file_idx, old_decision, "skip");
         
         animate_swipe(true);
         advance_to_next();
@@ -694,30 +739,108 @@ void StandaloneFileTinderDialog::on_back() {
     }
 }
 
-void StandaloneFileTinderDialog::on_move_to_folder() {
+void StandaloneFileTinderDialog::on_undo() {
+    try {
+        if (undo_stack_.empty()) {
+            LOG_DEBUG("BasicMode", "Nothing to undo");
+            return;
+        }
+        
+        // Pop the last action
+        ActionRecord last_action = undo_stack_.back();
+        undo_stack_.pop_back();
+        
+        // Revert the file's decision
+        auto& file = files_[last_action.file_index];
+        LOG_INFO("BasicMode", QString("Undoing action on file: %1 (was %2, reverting to %3)")
+                             .arg(file.name, last_action.new_decision, last_action.previous_decision));
+        
+        // Decrement count for the action we're undoing
+        update_decision_count(last_action.new_decision, -1);
+        
+        // Restore previous decision
+        file.decision = last_action.previous_decision;
+        file.destination_folder = last_action.destination_folder;
+        
+        // Increment count for the restored decision (if not pending)
+        if (last_action.previous_decision != "pending") {
+            update_decision_count(last_action.previous_decision, 1);
+        }
+        
+        // Navigate to the undone file
+        for (int i = 0; i < static_cast<int>(filtered_indices_.size()); ++i) {
+            if (filtered_indices_[i] == last_action.file_index) {
+                current_filtered_index_ = i;
+                break;
+            }
+        }
+        
+        // Update UI
+        update_stats();
+        update_progress();
+        show_current_file();
+        
+        // Disable undo button if stack is empty
+        if (undo_stack_.empty() && undo_btn_) {
+            undo_btn_->setEnabled(false);
+        }
+        
+    } catch (const std::exception& ex) {
+        LOG_ERROR("BasicMode", QString("Error in on_undo: %1").arg(ex.what()));
+        QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
+    }
+}
+
+void StandaloneFileTinderDialog::on_show_preview() {
     try {
         int file_idx = get_current_file_index();
         if (file_idx < 0) return;
         
-        QString folder = show_folder_picker();
-        if (folder.isEmpty()) return;
+        const auto& file = files_[file_idx];
         
-        auto& file = files_[file_idx];
-        LOG_INFO("BasicMode", QString("Moving file %1 to folder: %2").arg(file.name, folder));
-        
-        if (file.decision != "pending") {
-            update_decision_count(file.decision, -1);
+        // Check if it's an image
+        if (!file.mime_type.startsWith("image/")) {
+            QMessageBox::information(this, "Preview", 
+                "Preview is only available for image files.\n"
+                "Current file type: " + file.mime_type);
+            return;
         }
         
-        file.decision = "move";
-        file.destination_folder = folder;
-        move_count_++;
+        // Create or show the image preview window
+        if (!image_preview_window_) {
+            image_preview_window_ = new ImagePreviewWindow(this);
+            
+            // Connect navigation signals
+            connect(image_preview_window_, &ImagePreviewWindow::next_requested, this, [this]() {
+                on_skip();  // Move to next file
+                if (image_preview_window_ && image_preview_window_->isVisible()) {
+                    int idx = get_current_file_index();
+                    if (idx >= 0 && files_[idx].mime_type.startsWith("image/")) {
+                        image_preview_window_->set_image(files_[idx].path);
+                    }
+                }
+            });
+            
+            connect(image_preview_window_, &ImagePreviewWindow::previous_requested, this, [this]() {
+                on_back();  // Move to previous file
+                if (image_preview_window_ && image_preview_window_->isVisible()) {
+                    int idx = get_current_file_index();
+                    if (idx >= 0 && files_[idx].mime_type.startsWith("image/")) {
+                        image_preview_window_->set_image(files_[idx].path);
+                    }
+                }
+            });
+        }
         
-        db_.add_recent_folder(folder);
+        image_preview_window_->set_image(file.path);
+        image_preview_window_->show();
+        image_preview_window_->raise();
+        image_preview_window_->activateWindow();
         
-        advance_to_next();
+        LOG_DEBUG("BasicMode", QString("Opened preview for: %1").arg(file.name));
+        
     } catch (const std::exception& ex) {
-        LOG_ERROR("BasicMode", QString("Error in on_move_to_folder: %1").arg(ex.what()));
+        LOG_ERROR("BasicMode", QString("Error in on_show_preview: %1").arg(ex.what()));
         QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
     }
 }
@@ -999,8 +1122,13 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
         case Qt::Key_Backspace:
             on_back();
             break;
-        case Qt::Key_M:
-            on_move_to_folder();
+        case Qt::Key_Z:
+            // Undo last action
+            on_undo();
+            break;
+        case Qt::Key_P:
+            // Open preview in separate window
+            on_show_preview();
             break;
         case Qt::Key_Return:
         case Qt::Key_Enter:
@@ -1292,7 +1420,8 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <tr><td><span class='key'>←</span> Left Arrow</td><td>Mark file for deletion</td></tr>
 <tr><td><span class='key'>↓</span> Down Arrow</td><td>Skip file (no action)</td></tr>
 <tr><td><span class='key'>↑</span> Up Arrow</td><td>Go back to previous file</td></tr>
-<tr><td><span class='key'>M</span></td><td>Move file to folder</td></tr>
+<tr><td><span class='key'>Z</span></td><td>Undo last action</td></tr>
+<tr><td><span class='key'>P</span></td><td>Open image preview in separate window</td></tr>
 <tr><td><span class='key'>Enter</span></td><td>Finish review and execute</td></tr>
 <tr><td><span class='key'>1-6</span></td><td>Quick filter by file type</td></tr>
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
@@ -1301,7 +1430,7 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <br>
 <b>Filters:</b><br>
 1 = All | 2 = Images | 3 = Videos | 4 = Audio | 5 = Documents | 6 = Archives<br>
-(Use the dropdown to select 'Other' filter)
+(Use the dropdown to select 'Folders Only' or 'Specify...' filters)
 )";
     
     help_dialog.setTextFormat(Qt::RichText);

@@ -20,6 +20,15 @@
 class DatabaseManager;
 class QPropertyAnimation;
 class QGraphicsOpacityEffect;
+class ImagePreviewWindow;
+
+// Action record for undo functionality
+struct ActionRecord {
+    int file_index;           // Index into files_ vector
+    QString previous_decision; // What the decision was before
+    QString new_decision;      // What we changed it to
+    QString destination_folder; // For move operations
+};
 
 struct FileToProcess {
     QString path;
@@ -96,6 +105,12 @@ protected:
     int skip_count_;
     int move_count_;
     
+    // Undo stack
+    std::vector<ActionRecord> undo_stack_;
+    
+    // Image preview window (for separate window mode)
+    ImagePreviewWindow* image_preview_window_;
+    
     // UI Components
     QLabel* preview_label_;
     QLabel* file_info_label_;
@@ -113,7 +128,8 @@ protected:
     QPushButton* delete_btn_;
     QPushButton* skip_btn_;
     QPushButton* keep_btn_;
-    QPushButton* move_btn_;
+    QPushButton* undo_btn_;        // Undo button (replaces move_btn_)
+    QPushButton* preview_btn_;     // Image preview in separate window
     QPushButton* finish_btn_;
     QPushButton* switch_mode_btn_;
     QPushButton* help_btn_;
@@ -156,10 +172,13 @@ protected:
     virtual void on_delete();
     virtual void on_skip();
     virtual void on_back();
-    virtual void on_move_to_folder();
+    virtual void on_undo();           // Undo last action
+    virtual void on_show_preview();   // Open image in separate window
     virtual void on_finish();
     void advance_to_next();
     void go_to_previous();
+    void record_action(int file_index, const QString& old_decision, const QString& new_decision,
+                       const QString& dest_folder = QString());
     
     // Helper to update decision counts (deduplication)
     void update_decision_count(const QString& old_decision, int delta);
