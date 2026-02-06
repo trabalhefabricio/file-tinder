@@ -14,6 +14,9 @@
 #include <QApplication>
 #include <QTextStream>
 #include <QDateTime>
+#include <QLabel>
+#include <QPushButton>
+#include <QTextEdit>
 
 DiagnosticTool::DiagnosticTool(DatabaseManager& db, QWidget* parent)
     : QDialog(parent)
@@ -209,7 +212,7 @@ DiagnosticTestResult DiagnosticTool::test_database_connection() {
     QElapsedTimer timer;
     timer.start();
     
-    bool connected = db_.is_connected();
+    bool connected = db_.is_open();
     
     result.duration_ms = static_cast<int>(timer.elapsed());
     result.passed = connected;
