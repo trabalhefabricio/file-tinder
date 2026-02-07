@@ -2,6 +2,7 @@
 // Shared filter and sort component implementation
 
 #include "FilterWidget.hpp"
+#include "StandaloneFileTinderDialog.hpp"  // For FileFilterType and SortOrder enums
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -126,7 +127,7 @@ void FilterWidget::setup_ui() {
     filter_combo_->addItem("Documents", static_cast<int>(FileFilterType::Documents));
     filter_combo_->addItem("Archives", static_cast<int>(FileFilterType::Archives));
     filter_combo_->addItem("Folders Only", static_cast<int>(FileFilterType::FoldersOnly));
-    filter_combo_->addItem("Specify...", static_cast<int>(FileFilterType::Specify));
+    filter_combo_->addItem("Specify...", static_cast<int>(FileFilterType::Custom));
     filter_combo_->setMinimumWidth(100);
     layout->addWidget(filter_combo_);
 
@@ -172,7 +173,7 @@ void FilterWidget::setup_ui() {
 void FilterWidget::on_filter_changed(int index) {
     auto type = static_cast<FileFilterType>(filter_combo_->itemData(index).toInt());
     
-    if (type == FileFilterType::Specify) {
+    if (type == FileFilterType::Custom) {
         on_specify_clicked();
         return;
     }
@@ -212,7 +213,7 @@ void FilterWidget::on_specify_clicked() {
     if (dialog.exec() == QDialog::Accepted) {
         custom_extensions_ = dialog.get_extensions();
         if (!custom_extensions_.isEmpty()) {
-            current_filter_ = FileFilterType::Specify;
+            current_filter_ = FileFilterType::Custom;
             emit filter_changed();
         } else {
             // If no extensions specified, revert to All

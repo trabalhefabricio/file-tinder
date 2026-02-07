@@ -71,7 +71,7 @@ private:
     
     // Override actions
     void on_finish() override;
-    void show_current_file() override;
+    void show_current_file();  // Override base class implementation
     
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;

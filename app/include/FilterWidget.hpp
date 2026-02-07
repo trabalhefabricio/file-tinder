@@ -14,30 +14,16 @@
 #include <QDialog>
 #include <QListWidget>
 
-// Filter types for file filtering
-enum class FileFilterType {
-    All = 0,
-    Images,
-    Videos,
-    Audio,
-    Documents,
-    Archives,
-    FoldersOnly,
-    Specify
-};
+// Forward declare - actual enums are in StandaloneFileTinderDialog.hpp
+enum class FileFilterType;
+enum class SortOrder;
 
-// Sort field options
+// Sort field options (FilterWidget specific)
 enum class SortField {
     Name = 0,
     Size,
     Type,
     DateModified
-};
-
-// Sort order
-enum class SortOrder {
-    Ascending = 0,
-    Descending
 };
 
 // Dialog for specifying custom extensions

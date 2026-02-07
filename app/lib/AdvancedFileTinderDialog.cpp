@@ -472,7 +472,7 @@ void AdvancedFileTinderDialog::update_file_info_display() {
     }
     
     const auto& file = files_[idx];
-    QString path = file.file_path;
+    QString path = file.path;
     QFileInfo info(path);
     
     // Icon

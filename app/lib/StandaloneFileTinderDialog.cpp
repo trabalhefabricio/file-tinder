@@ -1341,7 +1341,7 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
                    !mime.contains("archive");
         case FileFilterType::FoldersOnly:
             return file.is_directory;
-        case FileFilterType::Custom:
+        case FileFilterType::Custom: {
             // Match custom extensions
             if (custom_extensions_.isEmpty()) return true;
             QString ext = "." + file.extension.toLower();
@@ -1351,6 +1351,7 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
                 }
             }
             return false;
+        }
         default:
             return true;
     }
