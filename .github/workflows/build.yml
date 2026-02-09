@@ -1,0 +1,198 @@
+name: Build File Tinder
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Qt and tools
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.6.*'
+        tools: 'tools_cmake'
+    
+    - name: Install packaging tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libfuse2 libxcb-cursor0
+    
+    - name: Configure and build
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+        cmake --build build --parallel $(nproc)
+    
+    - name: Prepare AppDir structure
+      run: |
+        DESTDIR=AppDir cmake --install build
+        mkdir -p AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+        
+        echo "[Desktop Entry]" > AppDir/usr/share/applications/FileTinder.desktop
+        echo "Name=File Tinder" >> AppDir/usr/share/applications/FileTinder.desktop
+        echo "Exec=FileTinder" >> AppDir/usr/share/applications/FileTinder.desktop
+        echo "Icon=FileTinder" >> AppDir/usr/share/applications/FileTinder.desktop
+        echo "Type=Application" >> AppDir/usr/share/applications/FileTinder.desktop
+        echo "Categories=Utility;FileTools;" >> AppDir/usr/share/applications/FileTinder.desktop
+        
+        cp app/resources/icons/folder.svg AppDir/usr/share/icons/hicolor/256x256/apps/FileTinder.svg
+        
+        mkdir -p AppDir/usr/plugins/platforms AppDir/usr/plugins/sqldrivers AppDir/usr/plugins/imageformats
+        cp -r ${Qt6_DIR}/plugins/platforms/* AppDir/usr/plugins/platforms/ 2>/dev/null || true
+        cp -r ${Qt6_DIR}/plugins/sqldrivers/* AppDir/usr/plugins/sqldrivers/ 2>/dev/null || true
+        cp -r ${Qt6_DIR}/plugins/imageformats/* AppDir/usr/plugins/imageformats/ 2>/dev/null || true
+        
+        mkdir -p AppDir/usr/lib
+        for qtlib in Core Gui Widgets Sql DBus XcbQpa OpenGL; do
+          cp ${Qt6_DIR}/lib/libQt6${qtlib}.so* AppDir/usr/lib/ 2>/dev/null || true
+        done
+        cp ${Qt6_DIR}/lib/libicu*.so* AppDir/usr/lib/ 2>/dev/null || true
+    
+    - name: Create portable archive
+      run: |
+        cd AppDir/usr
+        echo '#!/bin/bash' > run-filetinder.sh
+        echo 'APPDIR="$(dirname "$(readlink -f "$0")")"' >> run-filetinder.sh
+        echo 'export LD_LIBRARY_PATH="${APPDIR}/lib:${LD_LIBRARY_PATH}"' >> run-filetinder.sh
+        echo 'export QT_PLUGIN_PATH="${APPDIR}/plugins"' >> run-filetinder.sh
+        echo 'exec "${APPDIR}/bin/FileTinder" "$@"' >> run-filetinder.sh
+        chmod +x run-filetinder.sh
+        cd ../..
+        mv AppDir FileTinder-Linux
+        tar czvf FileTinder-Linux-x64.tar.gz FileTinder-Linux
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: FileTinder-Linux-x64
+        path: FileTinder-Linux-x64.tar.gz
+
+  build-macos:
+    runs-on: macos-13
+    permissions:
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.6.*'
+    
+    - name: Configure and build
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --parallel $(sysctl -n hw.logicalcpu)
+    
+    - name: Create app bundle with dependencies
+      run: |
+        APP_NAME="FileTinder"
+        BUILD_DIR="build"
+        BUNDLE_DIR="bundle"
+        
+        mkdir -p ${BUNDLE_DIR}/${APP_NAME}.app/Contents/MacOS
+        mkdir -p ${BUNDLE_DIR}/${APP_NAME}.app/Contents/Frameworks
+        mkdir -p ${BUNDLE_DIR}/${APP_NAME}.app/Contents/PlugIns/platforms
+        mkdir -p ${BUNDLE_DIR}/${APP_NAME}.app/Contents/PlugIns/sqldrivers
+        mkdir -p ${BUNDLE_DIR}/${APP_NAME}.app/Contents/PlugIns/imageformats
+        mkdir -p ${BUNDLE_DIR}/${APP_NAME}.app/Contents/Resources
+        
+        cp ${BUILD_DIR}/${APP_NAME} ${BUNDLE_DIR}/${APP_NAME}.app/Contents/MacOS/
+        
+        cat > ${BUNDLE_DIR}/${APP_NAME}.app/Contents/Info.plist << PLISTEOF
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleExecutable</key>
+            <string>FileTinder</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.filetinder.app</string>
+            <key>CFBundleName</key>
+            <string>File Tinder</string>
+            <key>CFBundleVersion</key>
+            <string>1.0.0</string>
+            <key>CFBundleShortVersionString</key>
+            <string>1.0.0</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>11.0</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+        </dict>
+        </plist>
+        PLISTEOF
+        
+        macdeployqt ${BUNDLE_DIR}/${APP_NAME}.app -verbose=2
+        
+        cd ${BUNDLE_DIR}
+        zip -ry ${APP_NAME}-macOS-x64.zip ${APP_NAME}.app
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: FileTinder-macOS-x64
+        path: bundle/FileTinder-macOS-x64.zip
+
+  build-windows:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Qt
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.6.*'
+        arch: 'win64_msvc2019_64'
+    
+    - name: Configure and build
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release --parallel
+    
+    - name: Package with all dependencies
+      shell: pwsh
+      run: |
+        $appName = "FileTinder"
+        $outputDir = "release-package"
+        
+        New-Item -ItemType Directory -Force -Path $outputDir
+        
+        Copy-Item "build/Release/${appName}.exe" -Destination $outputDir
+        
+        & windeployqt `
+          --release `
+          --no-translations `
+          --no-system-d3d-compiler `
+          --no-opengl-sw `
+          --dir $outputDir `
+          "$outputDir/${appName}.exe"
+        
+        $vcRedistDir = "${env:VCToolsRedistDir}x64\Microsoft.VC143.CRT"
+        if (Test-Path $vcRedistDir) {
+          Copy-Item "$vcRedistDir\*.dll" -Destination $outputDir -ErrorAction SilentlyContinue
+        }
+        
+        Compress-Archive -Path "$outputDir\*" -DestinationPath "${appName}-Windows-x64.zip" -Force
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: FileTinder-Windows-x64
+        path: FileTinder-Windows-x64.zip
