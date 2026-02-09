@@ -235,8 +235,11 @@ void ImagePreviewWindow::wheelEvent(QWheelEvent* event) {
 
 void ImagePreviewWindow::resizeEvent(QResizeEvent* event) {
     QDialog::resizeEvent(event);
-    // Optionally re-fit the image when resizing
-    // on_fit_to_window();
+    // Re-fit the image when resizing to ensure it displays correctly
+    // Only re-fit if we have a valid pixmap and the window is visible
+    if (!original_pixmap_.isNull() && isVisible()) {
+        on_fit_to_window();
+    }
 }
 
 #include "ImagePreviewWindow.moc"

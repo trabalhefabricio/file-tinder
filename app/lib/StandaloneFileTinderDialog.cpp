@@ -1153,7 +1153,13 @@ void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
 
 void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
     QDialog::resizeEvent(event);
-    // The layout handles resizing automatically
+    
+    // Update the preview to fit the new window size
+    // This ensures images scale correctly when the window is resized
+    int file_idx = get_current_file_index();
+    if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+        update_preview(files_[file_idx].path);
+    }
 }
 
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {
