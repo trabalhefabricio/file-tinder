@@ -3,13 +3,13 @@
 
 namespace ui::dimensions {
     // Standalone File Tinder (Basic Mode)
-    constexpr int kStandaloneFileTinderMinWidth = 900;
-    constexpr int kStandaloneFileTinderMinHeight = 700;
+    constexpr int kStandaloneFileTinderMinWidth = 700;
+    constexpr int kStandaloneFileTinderMinHeight = 550;
     
     // Advanced File Tinder
-    constexpr int kAdvancedFileTinderMinWidth = 1000;
-    constexpr int kAdvancedFileTinderMinHeight = 750;
-    constexpr int kFolderTreePanelMinWidth = 400;
+    constexpr int kAdvancedFileTinderMinWidth = 800;
+    constexpr int kAdvancedFileTinderMinHeight = 600;
+    constexpr int kFolderTreePanelMinWidth = 350;
     constexpr int kFolderTreePanelMaxWidth = 600;
     
     // Quick Access Bar

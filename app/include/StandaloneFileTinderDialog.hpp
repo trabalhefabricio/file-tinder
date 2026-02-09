@@ -14,6 +14,7 @@
 #include <QString>
 #include <QStringList>
 #include <QDateTime>
+#include <QTimer>
 #include <vector>
 #include <memory>
 
@@ -136,6 +137,9 @@ protected:
     
     // Animation
     QPropertyAnimation* swipe_animation_;
+    
+    // Resize debounce timer
+    QTimer* resize_timer_;
     
     // Initialization
     virtual void setup_ui();

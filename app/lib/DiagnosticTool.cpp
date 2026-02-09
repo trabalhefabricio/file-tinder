@@ -17,6 +17,8 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QTextEdit>
+#include <QScreen>
+#include <QSysInfo>
 
 DiagnosticTool::DiagnosticTool(DatabaseManager& db, QWidget* parent)
     : QDialog(parent)
@@ -104,6 +106,8 @@ void DiagnosticTool::setup_ui() {
     
     // Initialize test list
     test_names_ = {
+        "Screen Information",
+        "Qt/System Version",
         "Database Connection",
         "Database Operations",
         "File Operations",
@@ -147,27 +151,33 @@ void DiagnosticTool::run_all_tests() {
     
     LOG_INFO("Diagnostics", "Running all diagnostic tests");
     
-    // Run each test
-    report_result(test_database_connection());
+    // Run each test (order matches test_names_ list)
+    report_result(test_screen_info());
     progress_bar_->setValue(1);
     
-    report_result(test_database_operations());
+    report_result(test_qt_version());
     progress_bar_->setValue(2);
     
-    report_result(test_file_operations());
+    report_result(test_database_connection());
     progress_bar_->setValue(3);
     
-    report_result(test_folder_creation());
+    report_result(test_database_operations());
     progress_bar_->setValue(4);
     
-    report_result(test_ui_components());
+    report_result(test_file_operations());
     progress_bar_->setValue(5);
     
-    report_result(test_mime_detection());
+    report_result(test_folder_creation());
     progress_bar_->setValue(6);
     
-    report_result(test_memory_usage());
+    report_result(test_ui_components());
     progress_bar_->setValue(7);
+    
+    report_result(test_mime_detection());
+    progress_bar_->setValue(8);
+    
+    report_result(test_memory_usage());
+    progress_bar_->setValue(9);
     
     // Summary
     int passed = 0, failed = 0;
@@ -192,13 +202,15 @@ void DiagnosticTool::run_selected_test(int index) {
     
     DiagnosticTestResult result;
     switch (index) {
-        case 0: result = test_database_connection(); break;
-        case 1: result = test_database_operations(); break;
-        case 2: result = test_file_operations(); break;
-        case 3: result = test_folder_creation(); break;
-        case 4: result = test_ui_components(); break;
-        case 5: result = test_mime_detection(); break;
-        case 6: result = test_memory_usage(); break;
+        case 0: result = test_screen_info(); break;
+        case 1: result = test_qt_version(); break;
+        case 2: result = test_database_connection(); break;
+        case 3: result = test_database_operations(); break;
+        case 4: result = test_file_operations(); break;
+        case 5: result = test_folder_creation(); break;
+        case 6: result = test_ui_components(); break;
+        case 7: result = test_mime_detection(); break;
+        case 8: result = test_memory_usage(); break;
         default: return;
     }
     
@@ -381,6 +393,68 @@ DiagnosticTestResult DiagnosticTool::test_memory_usage() {
     result.duration_ms = static_cast<int>(timer.elapsed());
     result.passed = success;
     result.details = success ? "Memory allocation working" : "Memory allocation issues";
+    
+    return result;
+}
+
+DiagnosticTestResult DiagnosticTool::test_screen_info() {
+    DiagnosticTestResult result;
+    result.test_name = "Screen Information";
+    
+    QElapsedTimer timer;
+    timer.start();
+    
+    QScreen* primary_screen = QApplication::primaryScreen();
+    bool success = (primary_screen != nullptr);
+    
+    if (success) {
+        QRect screen_geometry = primary_screen->geometry();
+        QRect available_geometry = primary_screen->availableGeometry();
+        qreal dpi = primary_screen->physicalDotsPerInch();
+        qreal device_ratio = primary_screen->devicePixelRatio();
+        
+        result.details = QString("Screen: %1x%2 | Available: %3x%4 | DPI: %5 | Scale: %6x")
+            .arg(screen_geometry.width())
+            .arg(screen_geometry.height())
+            .arg(available_geometry.width())
+            .arg(available_geometry.height())
+            .arg(dpi, 0, 'f', 1)
+            .arg(device_ratio, 0, 'f', 2);
+            
+        // Check if window sizes might be too large for screen
+        if (available_geometry.width() < 800 || available_geometry.height() < 600) {
+            result.details += " | WARNING: Small screen detected";
+        }
+    } else {
+        result.details = "Failed to get screen information";
+    }
+    
+    result.duration_ms = static_cast<int>(timer.elapsed());
+    result.passed = success;
+    
+    return result;
+}
+
+DiagnosticTestResult DiagnosticTool::test_qt_version() {
+    DiagnosticTestResult result;
+    result.test_name = "Qt/System Version";
+    
+    QElapsedTimer timer;
+    timer.start();
+    
+    QString qt_version = qVersion();
+    QString os_name = QSysInfo::prettyProductName();
+    QString cpu_arch = QSysInfo::currentCpuArchitecture();
+    QString kernel = QSysInfo::kernelVersion();
+    
+    result.details = QString("Qt: %1 | OS: %2 | Arch: %3 | Kernel: %4")
+        .arg(qt_version)
+        .arg(os_name)
+        .arg(cpu_arch)
+        .arg(kernel);
+    
+    result.duration_ms = static_cast<int>(timer.elapsed());
+    result.passed = true;
     
     return result;
 }

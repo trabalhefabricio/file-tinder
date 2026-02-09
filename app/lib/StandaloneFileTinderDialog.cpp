@@ -50,7 +50,8 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , folders_checkbox_(nullptr)
     , undo_btn_(nullptr)
     , preview_btn_(nullptr)
-    , swipe_animation_(nullptr) {
+    , swipe_animation_(nullptr)
+    , resize_timer_(nullptr) {
     
     setWindowTitle("File Tinder - Basic Mode");
     setMinimumSize(ui::dimensions::kStandaloneFileTinderMinWidth,
@@ -58,6 +59,17 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     
     // Allow resizing
     setSizeGripEnabled(true);
+    
+    // Setup resize timer for debouncing preview updates
+    resize_timer_ = new QTimer(this);
+    resize_timer_->setSingleShot(true);
+    resize_timer_->setInterval(150);  // 150ms debounce
+    connect(resize_timer_, &QTimer::timeout, this, [this]() {
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            update_preview(files_[file_idx].path);
+        }
+    });
     
     // Don't call setup_ui() here - it's virtual and could cause issues
     // with derived classes. Call initialize() after construction instead.
@@ -219,7 +231,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Preview label (for images/text)
     preview_label_ = new QLabel();
-    preview_label_->setMinimumSize(400, 300);
+    preview_label_->setMinimumSize(300, 200);
     preview_label_->setAlignment(Qt::AlignCenter);
     preview_label_->setWordWrap(true);
     preview_layout->addWidget(preview_label_, 1);
@@ -1147,18 +1159,45 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
 }
 
 void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
-    save_session_state();
-    QDialog::closeEvent(event);
+    // Check if there are any pending decisions to save
+    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    
+    if (reviewed > 0 && !files_.empty()) {
+        QMessageBox::StandardButton reply = QMessageBox::question(
+            this, 
+            "Save Progress?",
+            QString("You have made %1 decisions. Do you want to save your progress before closing?\n\n"
+                    "Your session will be saved and you can continue later.")
+                    .arg(reviewed),
+            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
+            QMessageBox::Save
+        );
+        
+        if (reply == QMessageBox::Save) {
+            save_session_state();
+            event->accept();
+        } else if (reply == QMessageBox::Discard) {
+            // Don't save, just close
+            event->accept();
+        } else {
+            // Cancel - don't close
+            event->ignore();
+            return;
+        }
+    } else {
+        // No decisions made, just save and close
+        save_session_state();
+        event->accept();
+    }
 }
 
 void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
     QDialog::resizeEvent(event);
     
-    // Update the preview to fit the new window size
-    // This ensures images scale correctly when the window is resized
-    int file_idx = get_current_file_index();
-    if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
-        update_preview(files_[file_idx].path);
+    // Use debounced timer to update preview after resize stops
+    // This prevents stutter during continuous resizing
+    if (resize_timer_) {
+        resize_timer_->start();  // Restart the timer on each resize event
     }
 }
 
@@ -1374,13 +1413,13 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         preview_label_->setGraphicsEffect(effect);
     }
     
-    // Stop and safely schedule deletion of any running animation
+    // Stop any running animation safely
     if (swipe_animation_) {
         swipe_animation_->stop();
-        swipe_animation_->deleteLater();
-        swipe_animation_ = nullptr;
+        // Don't delete - let Qt handle it with parent ownership
     }
     
+    // Create new animation with proper parent for memory management
     swipe_animation_ = new QPropertyAnimation(effect, "opacity", this);
     swipe_animation_->setDuration(150);
     
@@ -1394,9 +1433,11 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     
     swipe_animation_->setEasingCurve(QEasingCurve::OutQuad);
     
-    connect(swipe_animation_, &QPropertyAnimation::finished, this, [effect]() {
+    // Clear our pointer when animation finishes
+    connect(swipe_animation_, &QPropertyAnimation::finished, this, [this, effect]() {
         // Reset opacity after animation
         effect->setOpacity(1.0);
+        swipe_animation_ = nullptr;  // Clear pointer since animation will be deleted
     });
     
     swipe_animation_->start(QAbstractAnimation::DeleteWhenStopped);

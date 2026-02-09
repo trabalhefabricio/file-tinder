@@ -292,7 +292,7 @@ MindMapView::MindMapView(QWidget* parent)
     setBackgroundBrush(QColor(250, 250, 250));
     
     // Set minimum size
-    setMinimumSize(ui::dimensions::kFolderTreePanelMinWidth, 400);
+    setMinimumSize(ui::dimensions::kFolderTreePanelMinWidth, 300);
 }
 
 MindMapView::~MindMapView() = default;

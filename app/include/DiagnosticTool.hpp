@@ -47,6 +47,8 @@ private:
     DiagnosticTestResult test_ui_components();
     DiagnosticTestResult test_mime_detection();
     DiagnosticTestResult test_memory_usage();
+    DiagnosticTestResult test_screen_info();
+    DiagnosticTestResult test_qt_version();
     
     DatabaseManager& db_;
     QTextEdit* output_display_;
