@@ -321,7 +321,7 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     // Update counts
     if (file.decision != "pending") {
         update_decision_count(file.decision, -1);
-        if (file.decision == "move" && !file.destination_folder.isEmpty()) {
+        if (file.decision == "move" && !file.destination_folder.isEmpty() && folder_model_) {
             folder_model_->unassign_file_from_folder(file.destination_folder);
         }
     }
@@ -330,8 +330,8 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     file.destination_folder = folder_path;
     move_count_++;
     
-    folder_model_->assign_file_to_folder(folder_path);
-    mind_map_view_->set_selected_folder(folder_path);
+    if (folder_model_) folder_model_->assign_file_to_folder(folder_path);
+    if (mind_map_view_) mind_map_view_->set_selected_folder(folder_path);
     
     advance_to_next();
 }
@@ -465,9 +465,9 @@ void AdvancedFileTinderDialog::on_remove_quick_access() {
 void AdvancedFileTinderDialog::update_file_info_display() {
     int idx = get_current_file_index();
     if (idx < 0 || idx >= static_cast<int>(files_.size())) {
-        file_icon_label_->setText("[---]");
-        file_name_label_->setText("No file selected");
-        file_details_label_->setText("");
+        if (file_icon_label_) file_icon_label_->setText("[---]");
+        if (file_name_label_) file_name_label_->setText("No file selected");
+        if (file_details_label_) file_details_label_->setText("");
         return;
     }
     
@@ -476,10 +476,10 @@ void AdvancedFileTinderDialog::update_file_info_display() {
     QFileInfo info(path);
     
     // Icon
-    file_icon_label_->setText(get_file_type_icon(path));
+    if (file_icon_label_) file_icon_label_->setText(get_file_type_icon(path));
     
     // Name
-    file_name_label_->setText(info.fileName());
+    if (file_name_label_) file_name_label_->setText(info.fileName());
     
     // Details
     QString size_str;
@@ -493,7 +493,7 @@ void AdvancedFileTinderDialog::update_file_info_display() {
         .arg(size_str)
         .arg(info.isDir() ? "Folder" : info.suffix().toUpper())
         .arg(info.lastModified().toString("yyyy-MM-dd hh:mm"));
-    file_details_label_->setText(details);
+    if (file_details_label_) file_details_label_->setText(details);
 }
 
 QString AdvancedFileTinderDialog::get_file_type_icon(const QString& path) {
@@ -516,11 +516,13 @@ void AdvancedFileTinderDialog::show_current_file() {
     update_stats();
     
     // Update progress bar
-    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
-    int total = static_cast<int>(files_.size());
-    progress_bar_->setMaximum(total);
-    progress_bar_->setValue(reviewed);
-    progress_bar_->setFormat(QString("%1 / %2").arg(reviewed).arg(total));
+    if (progress_bar_) {
+        int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+        int total = static_cast<int>(files_.size());
+        progress_bar_->setMaximum(total);
+        progress_bar_->setValue(reviewed);
+        progress_bar_->setFormat(QString("%1 / %2").arg(reviewed).arg(total));
+    }
 }
 
 void AdvancedFileTinderDialog::on_finish() {
@@ -599,10 +601,16 @@ void AdvancedFileTinderDialog::on_zoom_fit() {
 }
 
 void AdvancedFileTinderDialog::load_folder_tree() {
-    folder_model_->load_from_database(db_, source_folder_);
-    mind_map_view_->refresh_layout();
+    if (folder_model_) {
+        folder_model_->load_from_database(db_, source_folder_);
+    }
+    if (mind_map_view_) {
+        mind_map_view_->refresh_layout();
+    }
 }
 
 void AdvancedFileTinderDialog::save_folder_tree() {
-    folder_model_->save_to_database(db_, source_folder_);
+    if (folder_model_) {
+        folder_model_->save_to_database(db_, source_folder_);
+    }
 }

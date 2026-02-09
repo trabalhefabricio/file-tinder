@@ -26,6 +26,7 @@
 #include <QApplication>
 #include <QSettings>
 #include <QSplitter>
+#include <QPointer>
 #include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
@@ -1413,13 +1414,15 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         preview_label_->setGraphicsEffect(effect);
     }
     
-    // Stop any running animation safely
+    // Stop and delete any existing animation
     if (swipe_animation_) {
         swipe_animation_->stop();
-        // Don't delete - let Qt handle it with parent ownership
+        delete swipe_animation_;
+        swipe_animation_ = nullptr;
     }
     
-    // Create new animation with proper parent for memory management
+    // Create new animation
+    // Parent is 'this' for ownership, ensuring cleanup if dialog closes
     swipe_animation_ = new QPropertyAnimation(effect, "opacity", this);
     swipe_animation_->setDuration(150);
     
@@ -1433,14 +1436,19 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     
     swipe_animation_->setEasingCurve(QEasingCurve::OutQuad);
     
-    // Clear our pointer when animation finishes
-    connect(swipe_animation_, &QPropertyAnimation::finished, this, [this, effect]() {
-        // Reset opacity after animation
-        effect->setOpacity(1.0);
-        swipe_animation_ = nullptr;  // Clear pointer since animation will be deleted
+    // Use a weak reference to safely reset opacity when animation finishes
+    // QPointer will be null if the effect is deleted before the lambda runs
+    QPointer<QGraphicsOpacityEffect> weak_effect = effect;
+    connect(swipe_animation_, &QPropertyAnimation::finished, this, [this, weak_effect]() {
+        // Reset opacity after animation only if effect still exists
+        if (weak_effect) {
+            weak_effect->setOpacity(1.0);
+        }
+        // Clear pointer - animation will be deleted by parent ownership later
+        // But since we're not using DeleteWhenStopped, we manage deletion ourselves
     });
     
-    swipe_animation_->start(QAbstractAnimation::DeleteWhenStopped);
+    swipe_animation_->start();
 }
 
 // Shortcuts help dialog
