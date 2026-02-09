@@ -1414,15 +1414,14 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         preview_label_->setGraphicsEffect(effect);
     }
     
-    // Stop and delete any existing animation
+    // Stop any existing animation and schedule it for deletion
     if (swipe_animation_) {
         swipe_animation_->stop();
-        delete swipe_animation_;
+        swipe_animation_->deleteLater();  // Use deleteLater for event loop safety
         swipe_animation_ = nullptr;
     }
     
-    // Create new animation
-    // Parent is 'this' for ownership, ensuring cleanup if dialog closes
+    // Create new animation with 'this' as parent for automatic cleanup on dialog destruction
     swipe_animation_ = new QPropertyAnimation(effect, "opacity", this);
     swipe_animation_->setDuration(150);
     
@@ -1439,16 +1438,16 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     // Use a weak reference to safely reset opacity when animation finishes
     // QPointer will be null if the effect is deleted before the lambda runs
     QPointer<QGraphicsOpacityEffect> weak_effect = effect;
-    connect(swipe_animation_, &QPropertyAnimation::finished, this, [this, weak_effect]() {
+    connect(swipe_animation_, &QPropertyAnimation::finished, this, [weak_effect]() {
         // Reset opacity after animation only if effect still exists
         if (weak_effect) {
             weak_effect->setOpacity(1.0);
         }
-        // Clear pointer - animation will be deleted by parent ownership later
-        // But since we're not using DeleteWhenStopped, we manage deletion ourselves
     });
     
-    swipe_animation_->start();
+    // Use DeleteWhenStopped to automatically clean up the animation when it completes
+    // This prevents memory leaks for animations that finish normally
+    swipe_animation_->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
 // Shortcuts help dialog

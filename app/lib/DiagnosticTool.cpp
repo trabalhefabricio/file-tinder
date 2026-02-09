@@ -1,6 +1,7 @@
 #include "DiagnosticTool.hpp"
 #include "DatabaseManager.hpp"
 #include "AppLogger.hpp"
+#include "ui_constants.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -421,9 +422,15 @@ DiagnosticTestResult DiagnosticTool::test_screen_info() {
             .arg(dpi, 0, 'f', 1)
             .arg(device_ratio, 0, 'f', 2);
             
-        // Check if window sizes might be too large for screen
-        if (available_geometry.width() < 800 || available_geometry.height() < 600) {
-            result.details += " | WARNING: Small screen detected";
+        // Check if window sizes might be too large for screen using the smallest minimum size (Basic mode)
+        if (available_geometry.width() < ui::dimensions::kStandaloneFileTinderMinWidth || 
+            available_geometry.height() < ui::dimensions::kStandaloneFileTinderMinHeight) {
+            result.details += QString(" | WARNING: Screen too small (app needs at least %1x%2)")
+                .arg(ui::dimensions::kStandaloneFileTinderMinWidth)
+                .arg(ui::dimensions::kStandaloneFileTinderMinHeight);
+        } else if (available_geometry.width() < ui::dimensions::kAdvancedFileTinderMinWidth || 
+                   available_geometry.height() < ui::dimensions::kAdvancedFileTinderMinHeight) {
+            result.details += " | NOTE: Screen fits Basic mode only";
         }
     } else {
         result.details = "Failed to get screen information";
