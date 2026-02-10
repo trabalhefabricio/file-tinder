@@ -141,6 +141,16 @@ void AdvancedFileTinderDialog::setup_filter_bar() {
     filter_widget_ = new FilterWidget(this);
     connect(filter_widget_, &FilterWidget::filter_changed, this, &AdvancedFileTinderDialog::on_filter_changed);
     connect(filter_widget_, &FilterWidget::sort_changed, this, &AdvancedFileTinderDialog::on_sort_changed);
+    connect(filter_widget_, &FilterWidget::include_folders_changed, this, [this](bool include) {
+        include_folders_ = include;
+        scan_files();
+        apply_sort();
+        rebuild_filtered_indices();
+        load_session_state();
+        if (!filtered_indices_.empty()) {
+            show_current_file();
+        }
+    });
     static_cast<QVBoxLayout*>(layout())->addWidget(filter_widget_);
 }
 
@@ -580,12 +590,55 @@ void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
 }
 
 void AdvancedFileTinderDialog::on_filter_changed() {
-    // Re-apply filter from FilterWidget
-    // This would need integration with the filter system
+    if (!filter_widget_) return;
+    
+    FileFilterType filter_type = filter_widget_->get_filter_type();
+    current_filter_ = filter_type;
+    
+    if (filter_type == FileFilterType::Custom) {
+        custom_extensions_.clear();
+        for (const QString& ext : filter_widget_->get_custom_extensions()) {
+            custom_extensions_.append("." + ext);
+        }
+    }
+    
+    include_folders_ = filter_widget_->get_include_folders();
+    
+    rebuild_filtered_indices();
+    
+    // Find first pending file
+    current_filtered_index_ = 0;
+    for (size_t i = 0; i < filtered_indices_.size(); ++i) {
+        if (files_[filtered_indices_[i]].decision == "pending") {
+            current_filtered_index_ = static_cast<int>(i);
+            break;
+        }
+    }
+    
+    if (!filtered_indices_.empty()) {
+        show_current_file();
+    }
+    update_stats();
 }
 
 void AdvancedFileTinderDialog::on_sort_changed() {
-    // Re-apply sort from FilterWidget
+    if (!filter_widget_) return;
+    
+    SortField sf = filter_widget_->get_sort_field();
+    switch (sf) {
+        case SortField::Name: sort_field_ = FileSortField::Name; break;
+        case SortField::Size: sort_field_ = FileSortField::Size; break;
+        case SortField::Type: sort_field_ = FileSortField::Type; break;
+        case SortField::DateModified: sort_field_ = FileSortField::DateModified; break;
+    }
+    
+    sort_order_ = filter_widget_->get_sort_order();
+    
+    apply_sort();
+    rebuild_filtered_indices();
+    if (!filtered_indices_.empty()) {
+        show_current_file();
+    }
 }
 
 void AdvancedFileTinderDialog::on_zoom_in() {
