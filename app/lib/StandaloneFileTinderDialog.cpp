@@ -605,7 +605,7 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
         size_str = QString("%1 B").arg(file.size);
     } else if (file.size < 1024 * 1024) {
         size_str = QString("%1 KB").arg(file.size / 1024.0, 0, 'f', 1);
-    } else if (file.size < 1024 * 1024 * 1024) {
+    } else if (file.size < 1024LL * 1024 * 1024) {
         size_str = QString("%1 MB").arg(file.size / (1024.0 * 1024.0), 0, 'f', 2);
     } else {
         size_str = QString("%1 GB").arg(file.size / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);

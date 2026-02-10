@@ -494,8 +494,8 @@ void AdvancedFileTinderDialog::update_file_info_display() {
     // Details
     QString size_str;
     qint64 size = info.size();
-    if (size < 1024) size_str = QString("%1 B").arg(size);
-    else if (size < 1024*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
+    if (size < 1024LL) size_str = QString("%1 B").arg(size);
+    else if (size < 1024LL*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
     else if (size < 1024LL*1024*1024) size_str = QString("%1 MB").arg(size/(1024.0*1024.0), 0, 'f', 2);
     else size_str = QString("%1 GB").arg(size/(1024.0*1024.0*1024.0), 0, 'f', 2);
     
