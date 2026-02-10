@@ -45,12 +45,26 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , skip_count_(0)
     , move_count_(0)
     , image_preview_window_(nullptr)
+    , preview_label_(nullptr)
+    , file_info_label_(nullptr)
     , file_icon_label_(nullptr)
+    , progress_label_(nullptr)
+    , stats_label_(nullptr)
+    , progress_bar_(nullptr)
+    , filter_combo_(nullptr)
     , sort_combo_(nullptr)
     , sort_order_btn_(nullptr)
     , folders_checkbox_(nullptr)
+    , shortcuts_label_(nullptr)
+    , back_btn_(nullptr)
+    , delete_btn_(nullptr)
+    , skip_btn_(nullptr)
+    , keep_btn_(nullptr)
     , undo_btn_(nullptr)
     , preview_btn_(nullptr)
+    , finish_btn_(nullptr)
+    , switch_mode_btn_(nullptr)
+    , help_btn_(nullptr)
     , swipe_animation_(nullptr)
     , resize_timer_(nullptr) {
     
@@ -440,7 +454,7 @@ void StandaloneFileTinderDialog::scan_files() {
     LOG_INFO("BasicMode", QString("Scanned %1 files from %2").arg(files_.size()).arg(source_folder_));
     
     // Update progress
-    if (!files_.empty()) {
+    if (!files_.empty() && progress_bar_) {
         progress_bar_->setMaximum(static_cast<int>(files_.size()));
         progress_bar_->setValue(0);
     }
@@ -490,8 +504,8 @@ void StandaloneFileTinderDialog::show_current_file() {
     int file_idx = get_current_file_index();
     if (file_idx < 0 || file_idx >= static_cast<int>(files_.size())) {
         if (file_icon_label_) file_icon_label_->clear();
-        preview_label_->setText("No more files to review");
-        file_info_label_->setText("");
+        if (preview_label_) preview_label_->setText("No more files to review");
+        if (file_info_label_) file_info_label_->setText("");
         return;
     }
     
@@ -502,6 +516,8 @@ void StandaloneFileTinderDialog::show_current_file() {
 }
 
 void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
+    if (!preview_label_) return;
+    
     QFileInfo finfo(file_path);
     QMimeDatabase mime_db;
     QMimeType mime_type = mime_db.mimeTypeForFile(file_path);
@@ -598,6 +614,7 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
     QString type_str = file.is_directory ? "Folder" : 
                        (file.extension.isEmpty() ? "Unknown" : file.extension.toUpper());
     
+    if (!file_info_label_) return;
     file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
                                       "<span style='color: #95a5a6;'>%2 | %3 | %4</span>")
                               .arg(file.name, size_str, type_str, file.modified_date));
@@ -608,17 +625,20 @@ void StandaloneFileTinderDialog::update_progress() {
     int total = static_cast<int>(files_.size());
     int filtered_total = static_cast<int>(filtered_indices_.size());
     
-    progress_bar_->setValue(reviewed);
+    if (progress_bar_) progress_bar_->setValue(reviewed);
     
     int percent = total > 0 ? (reviewed * 100 / total) : 0;
     QString filter_info = (current_filter_ != FileFilterType::All) 
         ? QString(" (showing %1 of %2)").arg(filtered_total).arg(total)
         : "";
-    progress_label_->setText(QString("Progress: %1 / %2 files (%3%)%4")
-                             .arg(reviewed).arg(total).arg(percent).arg(filter_info));
+    if (progress_label_) {
+        progress_label_->setText(QString("Progress: %1 / %2 files (%3%)%4")
+                                 .arg(reviewed).arg(total).arg(percent).arg(filter_info));
+    }
 }
 
 void StandaloneFileTinderDialog::update_stats() {
+    if (!stats_label_) return;
     stats_label_->setText(QString(
         "<span style='color: %1;'>✓ Keep: %2</span>  |  "
         "<span style='color: %3;'>✗ Delete: %4</span>  |  "
@@ -884,10 +904,14 @@ void StandaloneFileTinderDialog::advance_to_next() {
     
     // No more pending files in filter
     current_filtered_index_ = static_cast<int>(filtered_indices_.size());
-    preview_label_->setText("<div style='text-align: center; font-size: 48px;'>🎉</div>"
-                           "<div style='text-align: center; font-size: 18px; color: #2ecc71;'>"
-                           "All files reviewed!</div>");
-    file_info_label_->setText("Click 'Finish Review' to execute your decisions.");
+    if (preview_label_) {
+        preview_label_->setText("<div style='text-align: center; font-size: 48px;'>🎉</div>"
+                               "<div style='text-align: center; font-size: 18px; color: #2ecc71;'>"
+                               "All files reviewed!</div>");
+    }
+    if (file_info_label_) {
+        file_info_label_->setText("Click 'Finish Review' to execute your decisions.");
+    }
 }
 
 void StandaloneFileTinderDialog::go_to_previous() {
@@ -1291,8 +1315,10 @@ void StandaloneFileTinderDialog::show_custom_extension_dialog() {
         if (!filtered_indices_.empty()) {
             show_current_file();
         } else {
-            preview_label_->setText("No files match the specified extensions");
-            file_info_label_->setText("Extensions: " + custom_extensions_.join(", "));
+            if (preview_label_)
+                preview_label_->setText("No files match the specified extensions");
+            if (file_info_label_)
+                file_info_label_->setText("Extensions: " + custom_extensions_.join(", "));
         }
         update_progress();
     }
@@ -1327,9 +1353,11 @@ void StandaloneFileTinderDialog::apply_filter(FileFilterType filter) {
     if (!filtered_indices_.empty()) {
         show_current_file();
     } else {
-        preview_label_->setText("<div style='text-align: center; font-size: 24px; color: #f39c12;'>"
-                               "No files match this filter</div>");
-        file_info_label_->setText("Try selecting a different filter or 'All Files'.");
+        if (preview_label_)
+            preview_label_->setText("<div style='text-align: center; font-size: 24px; color: #f39c12;'>"
+                                   "No files match this filter</div>");
+        if (file_info_label_)
+            file_info_label_->setText("Try selecting a different filter or 'All Files'.");
     }
     
     update_progress();
@@ -1379,8 +1407,6 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
                    !mime.startsWith("text/") &&
                    !mime.contains("pdf") &&
                    !mime.contains("document") &&
-                   !mime.contains("spreadsheet") &&
-                   !mime.contains("presentation") &&
                    !mime.contains("spreadsheet") &&
                    !mime.contains("presentation") &&
                    !mime.contains("zip") &&

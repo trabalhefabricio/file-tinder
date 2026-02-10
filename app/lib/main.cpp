@@ -132,7 +132,7 @@ private:
         root_layout->addLayout(tools_row);
         
         // Hotkey hint
-        auto* hint_text = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | M=Move");
+        auto* hint_text = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | Z=Undo");
         hint_text->setStyleSheet("color: #666666; font-size: 10px; padding-top: 8px;");
         hint_text->setAlignment(Qt::AlignCenter);
         root_layout->addWidget(hint_text);

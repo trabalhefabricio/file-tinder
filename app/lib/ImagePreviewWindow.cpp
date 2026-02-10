@@ -241,5 +241,3 @@ void ImagePreviewWindow::resizeEvent(QResizeEvent* event) {
         on_fit_to_window();
     }
 }
-
-#include "ImagePreviewWindow.moc"

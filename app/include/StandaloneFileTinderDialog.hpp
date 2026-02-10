@@ -162,7 +162,7 @@ protected:
     void on_folders_toggle_changed(int state);
     
     // File display
-    void show_current_file();
+    virtual void show_current_file();
     void update_preview(const QString& file_path);
     void update_file_info(const FileToProcess& file);
     void update_progress();

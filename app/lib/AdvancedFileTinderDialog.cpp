@@ -26,7 +26,7 @@ AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
     , main_content_(nullptr)
     , mind_map_view_(nullptr)
     , file_info_panel_(nullptr)
-    , file_icon_label_(nullptr)
+    , adv_file_icon_label_(nullptr)
     , file_name_label_(nullptr)
     , file_details_label_(nullptr)
     , quick_access_panel_(nullptr)
@@ -178,10 +178,10 @@ void AdvancedFileTinderDialog::setup_file_info_panel() {
     info_layout->setContentsMargins(10, 8, 10, 8);
     
     // File type icon
-    file_icon_label_ = new QLabel("[FILE]");
-    file_icon_label_->setStyleSheet("font-size: 18px; font-weight: bold; color: #333; min-width: 60px;");
-    file_icon_label_->setAlignment(Qt::AlignCenter);
-    info_layout->addWidget(file_icon_label_);
+    adv_file_icon_label_ = new QLabel("[FILE]");
+    adv_file_icon_label_->setStyleSheet("font-size: 18px; font-weight: bold; color: #333; min-width: 60px;");
+    adv_file_icon_label_->setAlignment(Qt::AlignCenter);
+    info_layout->addWidget(adv_file_icon_label_);
     
     // File name and details
     auto* text_widget = new QWidget();
@@ -465,7 +465,7 @@ void AdvancedFileTinderDialog::on_remove_quick_access() {
 void AdvancedFileTinderDialog::update_file_info_display() {
     int idx = get_current_file_index();
     if (idx < 0 || idx >= static_cast<int>(files_.size())) {
-        if (file_icon_label_) file_icon_label_->setText("[---]");
+        if (adv_file_icon_label_) adv_file_icon_label_->setText("[---]");
         if (file_name_label_) file_name_label_->setText("No file selected");
         if (file_details_label_) file_details_label_->setText("");
         return;
@@ -476,7 +476,7 @@ void AdvancedFileTinderDialog::update_file_info_display() {
     QFileInfo info(path);
     
     // Icon
-    if (file_icon_label_) file_icon_label_->setText(get_file_type_icon(path));
+    if (adv_file_icon_label_) adv_file_icon_label_->setText(get_file_type_icon(path));
     
     // Name
     if (file_name_label_) file_name_label_->setText(info.fileName());
@@ -485,9 +485,9 @@ void AdvancedFileTinderDialog::update_file_info_display() {
     QString size_str;
     qint64 size = info.size();
     if (size < 1024) size_str = QString("%1 B").arg(size);
-    else if (size < 1024*1024) size_str = QString("%1 KB").arg(size/1024);
-    else if (size < 1024*1024*1024) size_str = QString("%1 MB").arg(size/(1024*1024));
-    else size_str = QString("%1 GB").arg(size/(1024*1024*1024));
+    else if (size < 1024*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
+    else if (size < 1024LL*1024*1024) size_str = QString("%1 MB").arg(size/(1024.0*1024.0), 0, 'f', 2);
+    else size_str = QString("%1 GB").arg(size/(1024.0*1024.0*1024.0), 0, 'f', 2);
     
     QString details = QString("%1 | %2 | %3")
         .arg(size_str)

@@ -278,5 +278,3 @@ void FilterWidget::set_include_folders(bool include) {
 void FilterWidget::set_custom_extensions(const QStringList& extensions) {
     custom_extensions_ = extensions;
 }
-
-#include "FilterWidget.moc"
