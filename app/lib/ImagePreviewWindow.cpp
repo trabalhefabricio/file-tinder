@@ -177,8 +177,11 @@ void ImagePreviewWindow::on_zoom_out() {
 
 void ImagePreviewWindow::on_fit_to_window() {
     if (original_pixmap_.isNull()) return;
+    if (original_pixmap_.width() <= 0 || original_pixmap_.height() <= 0) return;
     
     QSize viewport_size = scroll_area_->viewport()->size();
+    if (viewport_size.width() <= 0 || viewport_size.height() <= 0) return;
+    
     double width_ratio = static_cast<double>(viewport_size.width()) / original_pixmap_.width();
     double height_ratio = static_cast<double>(viewport_size.height()) / original_pixmap_.height();
     

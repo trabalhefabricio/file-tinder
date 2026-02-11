@@ -390,16 +390,16 @@ void AdvancedFileTinderDialog::prompt_add_folder() {
             "Enter folder name:", QLineEdit::Normal, "", &ok);
         if (ok && !name.isEmpty()) {
             QString new_path = source_folder_ + "/" + name;
-            folder_model_->add_folder(new_path, true);  // Virtual folder
-            mind_map_view_->refresh_layout();
+            if (folder_model_) folder_model_->add_folder(new_path, true);  // Virtual folder
+            if (mind_map_view_) mind_map_view_->refresh_layout();
         }
     });
     
     menu.addAction("Add Existing Folder...", [this]() {
         QString folder = QFileDialog::getExistingDirectory(this, "Select Folder", source_folder_);
         if (!folder.isEmpty()) {
-            folder_model_->add_folder(folder, false);  // Existing folder
-            mind_map_view_->refresh_layout();
+            if (folder_model_) folder_model_->add_folder(folder, false);  // Existing folder
+            if (mind_map_view_) mind_map_view_->refresh_layout();
         }
     });
     
@@ -425,18 +425,20 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
             "Enter folder name:", QLineEdit::Normal, "", &ok);
         if (ok && !name.isEmpty()) {
             QString new_path = folder_path + "/" + name;
-            folder_model_->add_folder(new_path, true);
-            mind_map_view_->refresh_layout();
+            if (folder_model_) folder_model_->add_folder(new_path, true);
+            if (mind_map_view_) mind_map_view_->refresh_layout();
         }
     });
     
-    FolderNode* node = folder_model_->find_node(folder_path);
-    if (node && !node->exists && node->path != source_folder_) {
-        menu.addSeparator();
-        menu.addAction("Remove", [this, folder_path]() {
-            folder_model_->remove_folder(folder_path);
-            mind_map_view_->refresh_layout();
-        });
+    if (folder_model_) {
+        FolderNode* node = folder_model_->find_node(folder_path);
+        if (node && !node->exists && node->path != source_folder_) {
+            menu.addSeparator();
+            menu.addAction("Remove", [this, folder_path]() {
+                if (folder_model_) folder_model_->remove_folder(folder_path);
+                if (mind_map_view_) mind_map_view_->refresh_layout();
+            });
+        }
     }
     
     menu.exec(pos);
@@ -455,7 +457,8 @@ void AdvancedFileTinderDialog::add_to_quick_access(const QString& folder_path) {
     if (quick_access_folders_.contains(folder_path)) return;
     if (quick_access_folders_.size() >= kMaxQuickAccess) {
         QMessageBox::warning(this, "Quick Access Full",
-            "Quick Access is limited to 10 folders. Remove one first.");
+            QString("Quick Access is full (%1/%2). Remove one first.")
+                .arg(quick_access_folders_.size()).arg(kMaxQuickAccess));
         return;
     }
     quick_access_folders_.append(folder_path);

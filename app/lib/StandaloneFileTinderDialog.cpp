@@ -527,6 +527,8 @@ void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
     // Clear previous content
     if (file_icon_label_) file_icon_label_->clear();
     preview_label_->clear();
+    // Reset style from any previous text file preview
+    preview_label_->setStyleSheet("");
     
     // Determine icon for the file type (always shown centered)
     QString icon = "[FILE]";
