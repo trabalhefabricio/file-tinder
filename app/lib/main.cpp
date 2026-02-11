@@ -5,9 +5,11 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QLabel>
+#include <QComboBox>
 #include <QMessageBox>
 #include <QStyleFactory>
 #include <QDir>
+#include <QSettings>
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
@@ -35,9 +37,26 @@ public:
         if (!db_manager_.initialize()) {
             LOG_ERROR("Launcher", "Database initialization failed");
             QMessageBox::critical(this, "Database Error", "Could not initialize the database.");
+        } else {
+            // Auto-cleanup sessions older than 30 days
+            int cleaned = db_manager_.cleanup_stale_sessions(30);
+            if (cleaned > 0) {
+                LOG_INFO("Launcher", QString("Cleaned %1 stale session(s)").arg(cleaned));
+            }
         }
         
         build_interface();
+        
+        // Pre-fill last used folder if it still exists
+        QSettings settings("FileTinder", "FileTinder");
+        QString last_folder = settings.value("lastFolder").toString();
+        if (!last_folder.isEmpty() && QDir(last_folder).exists()) {
+            chosen_path_ = last_folder;
+            path_indicator_->setText(last_folder);
+            path_indicator_->setStyleSheet(
+                "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
+            );
+        }
     }
     
 private:
@@ -87,6 +106,37 @@ private:
         
         root_layout->addLayout(picker_row);
         
+        // Recent folders combo
+        QStringList recent = db_manager_.get_recent_folders(5);
+        if (!recent.isEmpty()) {
+            auto* recent_combo = new QComboBox();
+            recent_combo->addItem("Recent folders...");
+            for (const QString& folder : recent) {
+                recent_combo->addItem(folder);
+            }
+            recent_combo->setStyleSheet(
+                "QComboBox { padding: 4px 8px; background-color: #2d2d2d; border: 1px solid #404040; color: #aaaaaa; }"
+            );
+            connect(recent_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, 
+                    [this, recent_combo](int index) {
+                if (index > 0) {
+                    QString path = recent_combo->itemText(index);
+                    if (QDir(path).exists()) {
+                        chosen_path_ = path;
+                        path_indicator_->setText(path);
+                        path_indicator_->setStyleSheet(
+                            "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
+                        );
+                    } else {
+                        QMessageBox::warning(this, "Folder Not Found", 
+                            QString("The folder no longer exists:\n%1").arg(path));
+                    }
+                    recent_combo->setCurrentIndex(0);
+                }
+            });
+            root_layout->addWidget(recent_combo);
+        }
+        
         root_layout->addStretch();
         
         // Mode buttons
@@ -117,8 +167,17 @@ private:
         
         root_layout->addLayout(modes_row);
         
-        // Diagnostics button
+        // Tools row: Clear Session + Diagnostics
         auto* tools_row = new QHBoxLayout();
+        
+        auto* clear_btn = new QPushButton("Clear Session");
+        clear_btn->setStyleSheet(
+            "QPushButton { padding: 6px 12px; background-color: #4a4a4a; color: #cccccc; border: 1px solid #555555; }"
+            "QPushButton:hover { background-color: #555555; }"
+        );
+        connect(clear_btn, &QPushButton::clicked, this, &FileTinderLauncher::clear_session);
+        tools_row->addWidget(clear_btn);
+        
         tools_row->addStretch();
         
         auto* diag_btn = new QPushButton("Diagnostics");
@@ -203,6 +262,23 @@ private:
         LOG_INFO("Launcher", "Opening diagnostic tool");
         DiagnosticTool diag(db_manager_, this);
         diag.exec();
+    }
+    
+    void clear_session() {
+        if (chosen_path_.isEmpty()) {
+            QMessageBox::information(this, "No Folder", "Select a folder first to clear its session data.");
+            return;
+        }
+        
+        auto reply = QMessageBox::question(this, "Clear Session",
+            QString("Clear all saved progress for:\n%1\n\nThis cannot be undone.").arg(chosen_path_),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        
+        if (reply == QMessageBox::Yes) {
+            db_manager_.clear_session(chosen_path_);
+            LOG_INFO("Launcher", QString("Session cleared for: %1").arg(chosen_path_));
+            QMessageBox::information(this, "Session Cleared", "Saved progress has been cleared.");
+        }
     }
 };
 

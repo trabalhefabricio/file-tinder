@@ -391,3 +391,32 @@ QStringList DatabaseManager::get_quick_access_folders(const QString& session_fol
     
     return folders;
 }
+
+int DatabaseManager::cleanup_stale_sessions(int days_old) {
+    int cleaned = 0;
+    
+    QSqlQuery stale_query(db_);
+    // Find sessions with all decisions older than N days
+    stale_query.prepare(R"(
+        SELECT DISTINCT folder_path FROM file_tinder_state 
+        WHERE folder_path NOT IN (
+            SELECT DISTINCT folder_path FROM file_tinder_state 
+            WHERE timestamp > datetime('now', ? || ' days')
+        )
+    )");
+    stale_query.addBindValue(QString("-%1").arg(days_old));
+    
+    QStringList stale_folders;
+    if (stale_query.exec()) {
+        while (stale_query.next()) {
+            stale_folders.append(stale_query.value(0).toString());
+        }
+    }
+    
+    for (const QString& folder : stale_folders) {
+        clear_session(folder);
+        cleaned++;
+    }
+    
+    return cleaned;
+}

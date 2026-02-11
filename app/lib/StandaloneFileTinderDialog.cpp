@@ -1075,20 +1075,35 @@ void StandaloneFileTinderDialog::show_review_summary() {
         
         table->setRowCount(dest_stats.size());
         int row = 0;
+        int new_folder_count = 0;
         for (auto it = dest_stats.begin(); it != dest_stats.end(); ++it, ++row) {
-            table->setItem(row, 0, new QTableWidgetItem(it.key()));
+            QString folder_display = it.key();
+            // Mark folders that don't exist yet (will be created)
+            if (!QDir(it.key()).exists()) {
+                folder_display = it.key() + "  [NEW]";
+                new_folder_count++;
+            }
+            table->setItem(row, 0, new QTableWidgetItem(folder_display));
             table->setItem(row, 1, new QTableWidgetItem(QString::number(it.value().first)));
             
             qint64 size = it.value().second;
             QString size_str;
             if (size < 1024) size_str = QString("%1 B").arg(size);
-            else if (size < 1024*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
+            else if (size < 1024LL*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
             else size_str = QString("%1 MB").arg(size/(1024.0*1024.0), 0, 'f', 2);
             table->setItem(row, 2, new QTableWidgetItem(size_str));
         }
         
         table->resizeColumnsToContents();
         layout->addWidget(table);
+        
+        if (new_folder_count > 0) {
+            auto* new_folders_note = new QLabel(
+                QString("Note: %1 folder(s) marked [NEW] will be created during execution.")
+                    .arg(new_folder_count));
+            new_folders_note->setStyleSheet("color: #f39c12; font-style: italic; margin-top: 4px;");
+            layout->addWidget(new_folders_note);
+        }
     }
     
     // Buttons

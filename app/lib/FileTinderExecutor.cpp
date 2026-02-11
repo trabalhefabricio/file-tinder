@@ -95,6 +95,15 @@ bool FileTinderExecutor::move_files(const std::vector<std::pair<QString, QString
             callback(progress, total, QString("Moving: %1").arg(QFileInfo(source).fileName()));
         }
         
+        // Verify source file still exists before attempting move
+        if (!QFile::exists(source)) {
+            result.errors++;
+            result.error_messages.append(QString("Source file no longer exists: %1").arg(source));
+            all_success = false;
+            progress++;
+            continue;
+        }
+        
         QString dest_path = dest;
         
         // If dest is an existing directory or ends with separator, treat as directory
@@ -171,6 +180,15 @@ bool FileTinderExecutor::delete_files(const std::vector<QString>& files,
     for (const QString& file_path : files) {
         if (callback) {
             callback(progress, total, QString("Deleting: %1").arg(QFileInfo(file_path).fileName()));
+        }
+        
+        // Verify file still exists before attempting delete
+        if (!QFile::exists(file_path)) {
+            result.errors++;
+            result.error_messages.append(QString("File no longer exists (already deleted?): %1").arg(file_path));
+            all_success = false;
+            progress++;
+            continue;
         }
         
         bool deleted = false;
