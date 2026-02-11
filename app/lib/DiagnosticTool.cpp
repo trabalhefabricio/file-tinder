@@ -1185,7 +1185,8 @@ DiagnosticTestResult DiagnosticTool::test_dpi_scaling() {
     result.duration_ms = static_cast<int>(timer.elapsed());
     result.passed = success;
     result.details = success ?
-        QString("DPI factor: %.2f | scaled(100) = %1px | Consistent: yes").arg(factor).arg(scaled_100) :
+        QString("DPI factor: %1 | scaled(100) = %2px | Consistent: yes")
+            .arg(factor, 0, 'f', 2).arg(scaled_100) :
         issues.join("; ");
     
     return result;
