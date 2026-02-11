@@ -6,49 +6,39 @@ A swipe-style file organization tool with an intuitive "Tinder-like" interface f
 
 ## Features
 
-### 🎯 Basic Mode
+### Basic Mode
 - **Swipe-style sorting**: Use arrow keys or buttons to quickly categorize files
   - → **Keep**: Keep file in original location
   - ← **Delete**: Mark file for deletion
   - ↓ **Skip**: Skip/ignore file
   - ↑ **Back**: Go back to previous file
-- **Move to Folder**: Select destination folders for files
+- **Undo**: Revert your last action with Z
+- **Image Preview**: Open images in a separate zoomable window with P
+- **Filtering**: Filter by file type (Images, Videos, Audio, Documents, Archives, Other, Folders Only) or specify custom extensions
+- **Sorting**: Order files by Name, Size, Type, or Date Modified (ascending/descending)
 - **Progress tracking**: Visual progress bar and statistics
 - **Session persistence**: Resume sorting sessions across application restarts
 
-### 🌳 Advanced Mode
-- **Visual Mind Map View**: Large, clickable folder nodes displayed as a mind map
-- **Interactive folder tree**: Click any folder node to instantly move the current file there
-- **Dynamic folder creation**: Create new folders on-the-fly during sorting
-- **Quick access bar**: Pin frequently used folders for one-click access
+### Advanced Mode
+- **Visual Mind Map**: Large, clickable folder nodes displayed as a mind map
+- **One-click file assignment**: Click any folder node to instantly move the current file there
+- **Dynamic folder creation**: Create new or add existing folders on-the-fly via the "+" node
+- **Quick Access bar**: Pin up to 10 frequently used folders for one-click access (keys 1-0)
 - **Folder connections**: Group related folders visually
-- **Pan and zoom**: Navigate large folder structures with ease
+- **Pan and zoom**: Navigate large folder structures with Ctrl+Scroll or middle-click drag
+- **Shared filtering & sorting**: Same filter/sort capabilities as Basic Mode
+- **Keep, Delete, Skip, Undo**: Full file action controls below the mind map
 
-### 📋 Review & Execute
+### Review & Execute
 - **Batch operations**: Review all decisions before execution
 - **Summary view**: See file counts and sizes per destination
 - **Safe deletion**: Files are moved to trash by default
+- **Virtual folder creation**: Folders created in the mind map are auto-created during execution
 - **Error handling**: Detailed error reporting for any issues
 
-## Screenshots
-
-### Main Window
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      📁 FILE TINDER                         │
-│                                                             │
-│              Select a folder to organize:                   │
-│    ┌─────────────────────────────────┐ ┌─────────────┐     │
-│    │ /home/user/Downloads           │ │  Browse...  │     │
-│    └─────────────────────────────────┘ └─────────────┘     │
-│                                                             │
-│    ┌─────────────────┐  ┌─────────────────┐                │
-│    │  🎯 Basic Mode  │  │ 🌳 Advanced Mode │                │
-│    │ Simple swipe    │  │ Visual folder   │                │
-│    │   sorting       │  │     tree        │                │
-│    └─────────────────┘  └─────────────────┘                │
-└─────────────────────────────────────────────────────────────┘
-```
+### Diagnostics
+- **Built-in diagnostic tool**: Test database, file operations, MIME detection, screen info, and more
+- **Application logging**: Full log viewer with export capability
 
 ## Requirements
 
@@ -84,7 +74,7 @@ cmake --build . --parallel
 ```bash
 # Install dependencies
 sudo apt-get update
-sudo apt-get install -y cmake qt6-base-dev qt6-tools-dev
+sudo apt-get install -y cmake qt6-base-dev libqt6sql6-sqlite
 
 # Build
 mkdir build && cd build
@@ -155,17 +145,21 @@ cmake --build . --config Release
 | ← (Left Arrow) | Delete file |
 | ↓ (Down Arrow) | Skip file |
 | ↑ (Up Arrow) | Go back |
-| M | Move to folder |
+| Z | Undo last action |
+| P | Open image preview window |
 | Enter | Finish review |
+| ? | Show shortcuts help |
 
 #### Advanced Mode
 | Key | Action |
 |-----|--------|
-| 1-9 | Quick access to folders 1-9 |
-| D | Delete file |
-| S | Skip file |
-| N | Add new folder |
-| F | Toggle folder panel |
+| 1-9, 0 | Quick access folders (up to 10 slots) |
+| ← or D | Delete file |
+| ↓ or S | Skip file |
+| ↑ | Go back |
+| K | Keep file |
+| Z | Undo last action |
+| N | Add new folder to mind map |
 | Ctrl+Scroll | Zoom in/out |
 | Middle-click drag | Pan view |
 
@@ -190,7 +184,11 @@ file-tinder/
 │   │   ├── FolderTreeModel.hpp
 │   │   ├── FolderNodeWidget.hpp
 │   │   ├── MindMapView.hpp
+│   │   ├── FilterWidget.hpp
+│   │   ├── ImagePreviewWindow.hpp
 │   │   ├── FileTinderExecutor.hpp
+│   │   ├── AppLogger.hpp
+│   │   ├── DiagnosticTool.hpp
 │   │   ├── StandaloneFileTinderDialog.hpp
 │   │   └── AdvancedFileTinderDialog.hpp
 │   ├── lib/                    # Source files
@@ -199,7 +197,11 @@ file-tinder/
 │   │   ├── FolderTreeModel.cpp
 │   │   ├── FolderNodeWidget.cpp
 │   │   ├── MindMapView.cpp
+│   │   ├── FilterWidget.cpp
+│   │   ├── ImagePreviewWindow.cpp
 │   │   ├── FileTinderExecutor.cpp
+│   │   ├── AppLogger.cpp
+│   │   ├── DiagnosticTool.cpp
 │   │   ├── StandaloneFileTinderDialog.cpp
 │   │   └── AdvancedFileTinderDialog.cpp
 │   └── resources/              # Resources
@@ -208,7 +210,7 @@ file-tinder/
 │           ├── folder.svg
 │           ├── folder-new.svg
 │           └── folder-linked.svg
-└── proposal                    # Original specification
+└── proposal/                   # Original specification
 ```
 
 ## Database
@@ -221,27 +223,47 @@ File Tinder uses SQLite for session persistence. The database is stored in:
 ### Schema
 
 ```sql
--- File decisions
+-- File decisions (session state)
 CREATE TABLE file_tinder_state (
     folder_path TEXT NOT NULL,
     file_path TEXT NOT NULL,
-    decision TEXT NOT NULL,
+    decision TEXT NOT NULL CHECK (decision IN ('pending', 'keep', 'delete', 'skip', 'move')),
     destination_folder TEXT,
-    timestamp DATETIME
+    timestamp DATETIME,
+    UNIQUE(folder_path, file_path)
 );
 
--- Folder tree configuration
+-- Folder tree configuration (Advanced Mode mind map)
 CREATE TABLE tinder_folder_tree (
     session_folder TEXT NOT NULL,
     folder_path TEXT NOT NULL,
     display_name TEXT,
-    is_virtual INTEGER,
-    is_pinned INTEGER
+    is_virtual INTEGER DEFAULT 0,
+    is_pinned INTEGER DEFAULT 0,
+    parent_path TEXT,
+    sort_order INTEGER DEFAULT 0,
+    UNIQUE(session_folder, folder_path)
 );
 
--- Recent folders
-CREATE TABLE recent_folders (
+-- Folder connections (Advanced Mode grouped folders)
+CREATE TABLE tinder_folder_connections (
+    session_folder TEXT NOT NULL,
+    group_id INTEGER NOT NULL,
     folder_path TEXT NOT NULL,
+    UNIQUE(session_folder, folder_path)
+);
+
+-- Quick access folders (Advanced Mode, up to 10 slots)
+CREATE TABLE quick_access_folders (
+    session_folder TEXT NOT NULL,
+    folder_path TEXT NOT NULL,
+    slot_order INTEGER NOT NULL,
+    UNIQUE(session_folder, slot_order)
+);
+
+-- Recent folders (launcher history)
+CREATE TABLE recent_folders (
+    folder_path TEXT NOT NULL UNIQUE,
     timestamp DATETIME
 );
 ```

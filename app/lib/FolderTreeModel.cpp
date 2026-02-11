@@ -131,8 +131,8 @@ void FolderTreeModel::set_root_folder(const QString& path) {
     }
     root_->exists = QDir(path).exists();
     
-    // Scan one level of subdirectories
-    scan_directory(root_.get(), path, 0);
+    // Start with root only — destination folders are added manually via
+    // the "+" button (Create New Folder or Add Existing Folder).
     
     endResetModel();
     emit folder_structure_changed();

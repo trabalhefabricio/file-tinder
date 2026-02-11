@@ -141,6 +141,9 @@ protected:
     // Resize debounce timer
     QTimer* resize_timer_;
     
+    // Close guard to prevent re-entrant close
+    bool closing_ = false;
+    
     // Initialization
     virtual void setup_ui();
     void scan_files();
@@ -162,7 +165,7 @@ protected:
     void on_folders_toggle_changed(int state);
     
     // File display
-    void show_current_file();
+    virtual void show_current_file();
     void update_preview(const QString& file_path);
     void update_file_info(const FileToProcess& file);
     void update_progress();
@@ -202,6 +205,8 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;  // New: handle resize
+    void reject() override;  // Override to route Escape/close through save logic
+    bool eventFilter(QObject* obj, QEvent* event) override;  // Double-click to open file
     
 signals:
     void session_completed();

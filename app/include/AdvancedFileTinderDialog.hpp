@@ -27,7 +27,7 @@ private:
     QWidget* main_content_;
     MindMapView* mind_map_view_;
     QWidget* file_info_panel_;
-    QLabel* file_icon_label_;
+    QLabel* adv_file_icon_label_;
     QLabel* file_name_label_;
     QLabel* file_details_label_;
     QWidget* quick_access_panel_;
@@ -71,7 +71,11 @@ private:
     
     // Override actions
     void on_finish() override;
-    void show_current_file();  // Override base class implementation
+    void on_undo() override;
+    void show_current_file() override;  // Override base class implementation
+    void closeEvent(QCloseEvent* event) override;
+    void reject() override;  // Save folder tree/quick access before closing
+    bool eventFilter(QObject* obj, QEvent* event) override;  // Double-click to open file
     
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;

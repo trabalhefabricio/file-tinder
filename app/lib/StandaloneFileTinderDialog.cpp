@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QScreen>
 #include <QKeyEvent>
 #include <QCloseEvent>
 #include <QResizeEvent>
@@ -27,6 +28,10 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QPointer>
+#include <QSet>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QMouseEvent>
 #include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
@@ -45,21 +50,30 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , skip_count_(0)
     , move_count_(0)
     , image_preview_window_(nullptr)
+    , preview_label_(nullptr)
+    , file_info_label_(nullptr)
     , file_icon_label_(nullptr)
+    , progress_label_(nullptr)
+    , stats_label_(nullptr)
+    , progress_bar_(nullptr)
+    , filter_combo_(nullptr)
     , sort_combo_(nullptr)
     , sort_order_btn_(nullptr)
     , folders_checkbox_(nullptr)
+    , shortcuts_label_(nullptr)
+    , back_btn_(nullptr)
+    , delete_btn_(nullptr)
+    , skip_btn_(nullptr)
+    , keep_btn_(nullptr)
     , undo_btn_(nullptr)
     , preview_btn_(nullptr)
+    , finish_btn_(nullptr)
+    , switch_mode_btn_(nullptr)
+    , help_btn_(nullptr)
     , swipe_animation_(nullptr)
     , resize_timer_(nullptr) {
     
     setWindowTitle("File Tinder - Basic Mode");
-    setMinimumSize(ui::dimensions::kStandaloneFileTinderMinWidth,
-                   ui::dimensions::kStandaloneFileTinderMinHeight);
-    
-    // Allow resizing
-    setSizeGripEnabled(true);
     
     // Setup resize timer for debouncing preview updates
     resize_timer_ = new QTimer(this);
@@ -91,6 +105,16 @@ void StandaloneFileTinderDialog::initialize() {
     
     // Save this folder as last used
     save_last_folder();
+    
+    // Size window to fit within the available screen area
+    if (auto* screen = QApplication::primaryScreen()) {
+        QRect avail = screen->availableGeometry();
+        int target_w = qMin(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth),
+                            avail.width() * 85 / 100);
+        int target_h = qMin(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinHeight),
+                            avail.height() * 75 / 100);
+        resize(target_w, target_h);
+    }
 }
 
 void StandaloneFileTinderDialog::save_last_folder() {
@@ -123,7 +147,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Mode switch in upper right corner
     switch_mode_btn_ = new QPushButton("Advanced Mode");
-    switch_mode_btn_->setFixedSize(130, 32);
+    switch_mode_btn_->setFixedSize(ui::scaling::scaled(130), ui::scaling::scaled(32));
     switch_mode_btn_->setStyleSheet(
         "QPushButton { font-size: 11px; padding: 5px 10px; "
         "background-color: #9b59b6; border-radius: 4px; color: white; }"
@@ -134,7 +158,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Help button
     help_btn_ = new QPushButton("?");
-    help_btn_->setFixedSize(32, 32);
+    help_btn_->setFixedSize(ui::scaling::scaled(32), ui::scaling::scaled(32));
     help_btn_->setToolTip("Keyboard Shortcuts");
     help_btn_->setStyleSheet(
         "QPushButton { font-size: 14px; font-weight: bold; background-color: #34495e; "
@@ -205,7 +229,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Sort order toggle button
     sort_order_btn_ = new QPushButton("Asc");
-    sort_order_btn_->setFixedSize(50, 28);
+    sort_order_btn_->setFixedSize(ui::scaling::scaled(50), ui::scaling::scaled(28));
     sort_order_btn_->setStyleSheet(
         "QPushButton { padding: 4px; background-color: #34495e; "
         "border-radius: 4px; color: white; font-size: 11px; }"
@@ -226,15 +250,16 @@ void StandaloneFileTinderDialog::setup_ui() {
     // Centered file icon (for non-image files)
     file_icon_label_ = new QLabel();
     file_icon_label_->setAlignment(Qt::AlignCenter);
-    file_icon_label_->setMinimumHeight(80);
     file_icon_label_->setStyleSheet("font-size: 64px;");
     preview_layout->addWidget(file_icon_label_);
     
     // Preview label (for images/text)
     preview_label_ = new QLabel();
-    preview_label_->setMinimumSize(300, 200);
     preview_label_->setAlignment(Qt::AlignCenter);
     preview_label_->setWordWrap(true);
+    preview_label_->setCursor(Qt::PointingHandCursor);
+    preview_label_->setToolTip("Double-click to open file");
+    preview_label_->installEventFilter(this);
     preview_layout->addWidget(preview_label_, 1);
     
     // File name and info below preview
@@ -254,7 +279,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     progress_bar_ = new QProgressBar();
     progress_bar_->setTextVisible(true);
-    progress_bar_->setFixedHeight(20);
+    progress_bar_->setFixedHeight(ui::scaling::scaled(20));
     progress_bar_->setStyleSheet(
         "QProgressBar { border: 1px solid #34495e; border-radius: 4px; text-align: center; background: #2c3e50; }"
         "QProgressBar::chunk { background-color: #3498db; }"
@@ -289,7 +314,8 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_btn_row->setSpacing(20);
     
     delete_btn_ = new QPushButton("DELETE\n[Left]");
-    delete_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, ui::dimensions::kMainButtonHeight);
+    delete_btn_->setMinimumSize(ui::scaling::scaled(ui::dimensions::kMainButtonWidth),
+                                ui::scaling::scaled(ui::dimensions::kMainButtonHeight));
     delete_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     delete_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 18px; font-weight: bold; "
@@ -300,7 +326,8 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_btn_row->addWidget(delete_btn_);
     
     keep_btn_ = new QPushButton("KEEP\n[Right]");
-    keep_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, ui::dimensions::kMainButtonHeight);
+    keep_btn_->setMinimumSize(ui::scaling::scaled(ui::dimensions::kMainButtonWidth),
+                              ui::scaling::scaled(ui::dimensions::kMainButtonHeight));
     keep_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     keep_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 18px; font-weight: bold; "
@@ -317,7 +344,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     nav_btn_row->setSpacing(20);
     
     back_btn_ = new QPushButton("Back [Up]");
-    back_btn_->setFixedHeight(40);
+    back_btn_->setFixedHeight(ui::scaling::scaled(40));
     back_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     back_btn_->setStyleSheet(
         "QPushButton { font-size: 12px; font-weight: bold; "
@@ -328,7 +355,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     nav_btn_row->addWidget(back_btn_);
     
     skip_btn_ = new QPushButton("Skip [Down]");
-    skip_btn_->setFixedHeight(40);
+    skip_btn_->setFixedHeight(ui::scaling::scaled(40));
     skip_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     skip_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; font-weight: bold; "
@@ -350,7 +377,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Undo button (replaces Move to Folder in Basic Mode)
     undo_btn_ = new QPushButton("Undo [Z]");
-    undo_btn_->setFixedHeight(36);
+    undo_btn_->setFixedHeight(ui::scaling::scaled(36));
     undo_btn_->setStyleSheet(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: #9b59b6; border-radius: 4px; color: white; }"
@@ -363,7 +390,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Preview button (for opening images in separate window)
     preview_btn_ = new QPushButton("Preview [P]");
-    preview_btn_->setFixedHeight(36);
+    preview_btn_->setFixedHeight(ui::scaling::scaled(36));
     preview_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: %1; border-radius: 4px; color: white; }"
@@ -375,7 +402,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     bottom_layout->addStretch();
     
     finish_btn_ = new QPushButton("Finish Review");
-    finish_btn_->setFixedHeight(36);
+    finish_btn_->setFixedHeight(ui::scaling::scaled(36));
     finish_btn_->setStyleSheet(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: #1abc9c; border-radius: 4px; color: white; }"
@@ -440,7 +467,7 @@ void StandaloneFileTinderDialog::scan_files() {
     LOG_INFO("BasicMode", QString("Scanned %1 files from %2").arg(files_.size()).arg(source_folder_));
     
     // Update progress
-    if (!files_.empty()) {
+    if (!files_.empty() && progress_bar_) {
         progress_bar_->setMaximum(static_cast<int>(files_.size()));
         progress_bar_->setValue(0);
     }
@@ -490,8 +517,8 @@ void StandaloneFileTinderDialog::show_current_file() {
     int file_idx = get_current_file_index();
     if (file_idx < 0 || file_idx >= static_cast<int>(files_.size())) {
         if (file_icon_label_) file_icon_label_->clear();
-        preview_label_->setText("No more files to review");
-        file_info_label_->setText("");
+        if (preview_label_) preview_label_->setText("No more files to review");
+        if (file_info_label_) file_info_label_->setText("");
         return;
     }
     
@@ -502,6 +529,8 @@ void StandaloneFileTinderDialog::show_current_file() {
 }
 
 void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
+    if (!preview_label_) return;
+    
     QFileInfo finfo(file_path);
     QMimeDatabase mime_db;
     QMimeType mime_type = mime_db.mimeTypeForFile(file_path);
@@ -510,6 +539,8 @@ void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
     // Clear previous content
     if (file_icon_label_) file_icon_label_->clear();
     preview_label_->clear();
+    // Reset style from any previous text file preview
+    preview_label_->setStyleSheet("");
     
     // Determine icon for the file type (always shown centered)
     QString icon = "[FILE]";
@@ -589,7 +620,7 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
         size_str = QString("%1 B").arg(file.size);
     } else if (file.size < 1024 * 1024) {
         size_str = QString("%1 KB").arg(file.size / 1024.0, 0, 'f', 1);
-    } else if (file.size < 1024 * 1024 * 1024) {
+    } else if (file.size < 1024LL * 1024 * 1024) {
         size_str = QString("%1 MB").arg(file.size / (1024.0 * 1024.0), 0, 'f', 2);
     } else {
         size_str = QString("%1 GB").arg(file.size / (1024.0 * 1024.0 * 1024.0), 0, 'f', 2);
@@ -598,6 +629,7 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
     QString type_str = file.is_directory ? "Folder" : 
                        (file.extension.isEmpty() ? "Unknown" : file.extension.toUpper());
     
+    if (!file_info_label_) return;
     file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
                                       "<span style='color: #95a5a6;'>%2 | %3 | %4</span>")
                               .arg(file.name, size_str, type_str, file.modified_date));
@@ -608,26 +640,36 @@ void StandaloneFileTinderDialog::update_progress() {
     int total = static_cast<int>(files_.size());
     int filtered_total = static_cast<int>(filtered_indices_.size());
     
-    progress_bar_->setValue(reviewed);
+    if (progress_bar_) progress_bar_->setValue(reviewed);
     
     int percent = total > 0 ? (reviewed * 100 / total) : 0;
     QString filter_info = (current_filter_ != FileFilterType::All) 
         ? QString(" (showing %1 of %2)").arg(filtered_total).arg(total)
         : "";
-    progress_label_->setText(QString("Progress: %1 / %2 files (%3%)%4")
-                             .arg(reviewed).arg(total).arg(percent).arg(filter_info));
+    if (progress_label_) {
+        progress_label_->setText(QString("Progress: %1 / %2 files (%3%)%4")
+                                 .arg(reviewed).arg(total).arg(percent).arg(filter_info));
+    }
 }
 
 void StandaloneFileTinderDialog::update_stats() {
-    stats_label_->setText(QString(
+    if (!stats_label_) return;
+    
+    QString stats = QString(
         "<span style='color: %1;'>✓ Keep: %2</span>  |  "
         "<span style='color: %3;'>✗ Delete: %4</span>  |  "
-        "<span style='color: %5;'>↓ Skip: %6</span>  |  "
-        "<span style='color: %7;'>📁 Move: %8</span>"
+        "<span style='color: %5;'>↓ Skip: %6</span>"
     ).arg(ui::colors::kKeepColor).arg(keep_count_)
      .arg(ui::colors::kDeleteColor).arg(delete_count_)
-     .arg(ui::colors::kSkipColor).arg(skip_count_)
-     .arg(ui::colors::kMoveColor).arg(move_count_));
+     .arg(ui::colors::kSkipColor).arg(skip_count_);
+    
+    // Only show Move count if there are moves (relevant in Advanced Mode)
+    if (move_count_ > 0) {
+        stats += QString("  |  <span style='color: %1;'>📁 Move: %2</span>")
+            .arg(ui::colors::kMoveColor).arg(move_count_);
+    }
+    
+    stats_label_->setText(stats);
 }
 
 // Helper to update decision counts (deduplication of count logic)
@@ -647,17 +689,23 @@ int StandaloneFileTinderDialog::get_current_file_index() const {
 }
 
 void StandaloneFileTinderDialog::record_action(int file_index, const QString& old_decision, 
-                                               const QString& new_decision, const QString& dest_folder) {
+                                               const QString& new_decision, const QString& old_dest_folder) {
     ActionRecord record;
     record.file_index = file_index;
     record.previous_decision = old_decision;
     record.new_decision = new_decision;
-    record.destination_folder = dest_folder;
+    record.destination_folder = old_dest_folder;  // Store old destination for undo restore
     undo_stack_.push_back(record);
     
     // Enable undo button
     if (undo_btn_) {
         undo_btn_->setEnabled(true);
+    }
+    
+    // Save the NEW decision to DB immediately (crash safety)
+    if (file_index >= 0 && file_index < static_cast<int>(files_.size())) {
+        const auto& file = files_[file_index];
+        db_.save_file_decision(source_folder_, file.path, file.decision, file.destination_folder);
     }
 }
 
@@ -775,6 +823,10 @@ void StandaloneFileTinderDialog::on_undo() {
         file.decision = last_action.previous_decision;
         file.destination_folder = last_action.destination_folder;
         
+        // Save restored decision to DB immediately
+        db_.save_file_decision(source_folder_, file.path, 
+                              last_action.previous_decision, last_action.destination_folder);
+        
         // Increment count for the restored decision (if not pending)
         if (last_action.previous_decision != "pending") {
             update_decision_count(last_action.previous_decision, 1);
@@ -884,10 +936,15 @@ void StandaloneFileTinderDialog::advance_to_next() {
     
     // No more pending files in filter
     current_filtered_index_ = static_cast<int>(filtered_indices_.size());
-    preview_label_->setText("<div style='text-align: center; font-size: 48px;'>🎉</div>"
-                           "<div style='text-align: center; font-size: 18px; color: #2ecc71;'>"
-                           "All files reviewed!</div>");
-    file_info_label_->setText("Click 'Finish Review' to execute your decisions.");
+    if (file_icon_label_) file_icon_label_->clear();
+    if (preview_label_) {
+        preview_label_->setText("<div style='text-align: center; font-size: 48px;'>🎉</div>"
+                               "<div style='text-align: center; font-size: 18px; color: #2ecc71;'>"
+                               "All files reviewed!</div>");
+    }
+    if (file_info_label_) {
+        file_info_label_->setText("Click 'Finish Review' to execute your decisions.");
+    }
 }
 
 void StandaloneFileTinderDialog::go_to_previous() {
@@ -905,7 +962,7 @@ QString StandaloneFileTinderDialog::show_folder_picker() {
     // Show dialog with recent folders and browse option
     QDialog dialog(this);
     dialog.setWindowTitle("Select Destination Folder");
-    dialog.setMinimumSize(400, 300);
+    dialog.setMinimumSize(ui::scaling::scaled(400), ui::scaling::scaled(300));
     
     auto* layout = new QVBoxLayout(&dialog);
     
@@ -976,7 +1033,7 @@ QString StandaloneFileTinderDialog::show_folder_picker() {
 void StandaloneFileTinderDialog::show_review_summary() {
     QDialog summary_dialog(this);
     summary_dialog.setWindowTitle("Review Summary");
-    summary_dialog.setMinimumSize(700, 500);
+    summary_dialog.setMinimumSize(ui::scaling::scaled(700), ui::scaling::scaled(500));
     
     auto* layout = new QVBoxLayout(&summary_dialog);
     
@@ -1030,20 +1087,35 @@ void StandaloneFileTinderDialog::show_review_summary() {
         
         table->setRowCount(dest_stats.size());
         int row = 0;
+        int new_folder_count = 0;
         for (auto it = dest_stats.begin(); it != dest_stats.end(); ++it, ++row) {
-            table->setItem(row, 0, new QTableWidgetItem(it.key()));
+            QString folder_display = it.key();
+            // Mark folders that don't exist yet (will be created)
+            if (!QDir(it.key()).exists()) {
+                folder_display = it.key() + "  [NEW]";
+                new_folder_count++;
+            }
+            table->setItem(row, 0, new QTableWidgetItem(folder_display));
             table->setItem(row, 1, new QTableWidgetItem(QString::number(it.value().first)));
             
             qint64 size = it.value().second;
             QString size_str;
             if (size < 1024) size_str = QString("%1 B").arg(size);
-            else if (size < 1024*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
+            else if (size < 1024LL*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
             else size_str = QString("%1 MB").arg(size/(1024.0*1024.0), 0, 'f', 2);
             table->setItem(row, 2, new QTableWidgetItem(size_str));
         }
         
         table->resizeColumnsToContents();
         layout->addWidget(table);
+        
+        if (new_folder_count > 0) {
+            auto* new_folders_note = new QLabel(
+                QString("Note: %1 folder(s) marked [NEW] will be created during execution.")
+                    .arg(new_folder_count));
+            new_folders_note->setStyleSheet("color: #f39c12; font-style: italic; margin-top: 4px;");
+            layout->addWidget(new_folders_note);
+        }
     }
     
     // Buttons
@@ -1075,11 +1147,22 @@ void StandaloneFileTinderDialog::show_review_summary() {
 void StandaloneFileTinderDialog::execute_decisions() {
     ExecutionPlan plan;
     
+    // Collect unique destination folders from move decisions
+    QSet<QString> dest_folders;
+    
     for (const auto& file : files_) {
         if (file.decision == "delete") {
             plan.files_to_delete.push_back(file.path);
         } else if (file.decision == "move" && !file.destination_folder.isEmpty()) {
             plan.files_to_move.push_back({file.path, file.destination_folder});
+            dest_folders.insert(file.destination_folder);
+        }
+    }
+    
+    // Ensure all destination folders exist (handles virtual folders from advanced mode)
+    for (const QString& folder : dest_folders) {
+        if (!QDir(folder).exists()) {
+            plan.folders_to_create.push_back(folder);
         }
     }
     
@@ -1090,7 +1173,9 @@ void StandaloneFileTinderDialog::execute_decisions() {
     
     FileTinderExecutor executor;
     auto result = executor.execute(plan, [&](int current, int total, const QString& msg) {
-        progress.setValue(current * 100 / total);
+        if (total > 0) {
+            progress.setValue(current * 100 / total);
+        }
         progress.setLabelText(msg);
         QApplication::processEvents();
     });
@@ -1160,10 +1245,35 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
 }
 
 void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
+    // Don't delegate to QDialog::closeEvent — it accepts the event even if reject() cancels.
+    // Instead, ignore the event and route through reject() which handles save prompt.
+    event->ignore();
+    reject();
+}
+
+void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
+    QDialog::resizeEvent(event);
+    
+    // Use debounced timer to update preview after resize stops
+    // This prevents stutter during continuous resizing
+    if (resize_timer_) {
+        resize_timer_->start();  // Restart the timer on each resize event
+    }
+}
+
+void StandaloneFileTinderDialog::reject() {
+    // Guard against re-entrant calls (QMessageBox can trigger events)
+    if (closing_) {
+        QDialog::reject();
+        return;
+    }
+    
     // Check if there are any pending decisions to save
     int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
     
     if (reviewed > 0 && !files_.empty()) {
+        closing_ = true;  // Prevent re-entry from message box events
+        
         QMessageBox::StandardButton reply = QMessageBox::question(
             this, 
             "Save Progress?",
@@ -1176,30 +1286,29 @@ void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
         
         if (reply == QMessageBox::Save) {
             save_session_state();
-            event->accept();
+            QDialog::reject();
         } else if (reply == QMessageBox::Discard) {
-            // Don't save, just close
-            event->accept();
+            QDialog::reject();
         } else {
-            // Cancel - don't close
-            event->ignore();
-            return;
+            // Cancel — don't close
+            closing_ = false;
         }
     } else {
-        // No decisions made, just save and close
+        // No decisions made, just save state and close
         save_session_state();
-        event->accept();
+        QDialog::reject();
     }
 }
 
-void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
-    QDialog::resizeEvent(event);
-    
-    // Use debounced timer to update preview after resize stops
-    // This prevents stutter during continuous resizing
-    if (resize_timer_) {
-        resize_timer_->start();  // Restart the timer on each resize event
+bool StandaloneFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
+    if (obj == preview_label_ && event->type() == QEvent::MouseButtonDblClick) {
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
+        }
+        return true;
     }
+    return QDialog::eventFilter(obj, event);
 }
 
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {
@@ -1237,6 +1346,11 @@ void StandaloneFileTinderDialog::on_sort_order_toggled() {
 
 void StandaloneFileTinderDialog::on_folders_toggle_changed(int state) {
     include_folders_ = (state == Qt::Checked);
+    // Reset counts before re-scanning and reloading state
+    keep_count_ = 0;
+    delete_count_ = 0;
+    skip_count_ = 0;
+    move_count_ = 0;
     scan_files();  // Re-scan with new settings
     apply_sort();
     rebuild_filtered_indices();
@@ -1291,8 +1405,10 @@ void StandaloneFileTinderDialog::show_custom_extension_dialog() {
         if (!filtered_indices_.empty()) {
             show_current_file();
         } else {
-            preview_label_->setText("No files match the specified extensions");
-            file_info_label_->setText("Extensions: " + custom_extensions_.join(", "));
+            if (preview_label_)
+                preview_label_->setText("No files match the specified extensions");
+            if (file_info_label_)
+                file_info_label_->setText("Extensions: " + custom_extensions_.join(", "));
         }
         update_progress();
     }
@@ -1327,9 +1443,11 @@ void StandaloneFileTinderDialog::apply_filter(FileFilterType filter) {
     if (!filtered_indices_.empty()) {
         show_current_file();
     } else {
-        preview_label_->setText("<div style='text-align: center; font-size: 24px; color: #f39c12;'>"
-                               "No files match this filter</div>");
-        file_info_label_->setText("Try selecting a different filter or 'All Files'.");
+        if (preview_label_)
+            preview_label_->setText("<div style='text-align: center; font-size: 24px; color: #f39c12;'>"
+                                   "No files match this filter</div>");
+        if (file_info_label_)
+            file_info_label_->setText("Try selecting a different filter or 'All Files'.");
     }
     
     update_progress();
@@ -1379,8 +1497,6 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
                    !mime.startsWith("text/") &&
                    !mime.contains("pdf") &&
                    !mime.contains("document") &&
-                   !mime.contains("spreadsheet") &&
-                   !mime.contains("presentation") &&
                    !mime.contains("spreadsheet") &&
                    !mime.contains("presentation") &&
                    !mime.contains("zip") &&

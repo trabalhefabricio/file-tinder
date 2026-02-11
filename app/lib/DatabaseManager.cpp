@@ -7,7 +7,8 @@
 #include <QDebug>
 
 DatabaseManager::DatabaseManager(const QString& db_path)
-    : db_path_(db_path) {
+    : db_path_(db_path)
+    , connection_name_("FileTinderDB_" + QString::number(reinterpret_cast<quintptr>(this))) {
     if (db_path_.isEmpty()) {
         QString data_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         QDir().mkpath(data_dir);
@@ -19,10 +20,11 @@ DatabaseManager::~DatabaseManager() {
     if (db_.isOpen()) {
         db_.close();
     }
+    QSqlDatabase::removeDatabase(connection_name_);
 }
 
 bool DatabaseManager::initialize() {
-    db_ = QSqlDatabase::addDatabase("QSQLITE");
+    db_ = QSqlDatabase::addDatabase("QSQLITE", connection_name_);
     db_.setDatabaseName(db_path_);
     
     if (!db_.open()) {
@@ -388,4 +390,34 @@ QStringList DatabaseManager::get_quick_access_folders(const QString& session_fol
     }
     
     return folders;
+}
+
+int DatabaseManager::cleanup_stale_sessions(int days_old) {
+    int cleaned = 0;
+    
+    QSqlQuery stale_query(db_);
+    // Find sessions with all decisions older than N days
+    QString modifier = QString("-%1 days").arg(days_old);
+    stale_query.prepare(R"(
+        SELECT DISTINCT folder_path FROM file_tinder_state 
+        WHERE folder_path NOT IN (
+            SELECT DISTINCT folder_path FROM file_tinder_state 
+            WHERE timestamp > datetime('now', ?)
+        )
+    )");
+    stale_query.addBindValue(modifier);
+    
+    QStringList stale_folders;
+    if (stale_query.exec()) {
+        while (stale_query.next()) {
+            stale_folders.append(stale_query.value(0).toString());
+        }
+    }
+    
+    for (const QString& folder : stale_folders) {
+        clear_session(folder);
+        cleaned++;
+    }
+    
+    return cleaned;
 }

@@ -3,6 +3,7 @@
 
 #include "FilterWidget.hpp"
 #include "StandaloneFileTinderDialog.hpp"  // For FileFilterType and SortOrder enums
+#include "ui_constants.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -16,7 +17,7 @@ CustomExtensionDialog::CustomExtensionDialog(QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle("Specify Extensions");
-    setMinimumSize(300, 250);
+    setMinimumSize(ui::scaling::scaled(300), ui::scaling::scaled(250));
 
     auto* layout = new QVBoxLayout(this);
 
@@ -126,6 +127,7 @@ void FilterWidget::setup_ui() {
     filter_combo_->addItem("Audio", static_cast<int>(FileFilterType::Audio));
     filter_combo_->addItem("Documents", static_cast<int>(FileFilterType::Documents));
     filter_combo_->addItem("Archives", static_cast<int>(FileFilterType::Archives));
+    filter_combo_->addItem("Other", static_cast<int>(FileFilterType::Other));
     filter_combo_->addItem("Folders Only", static_cast<int>(FileFilterType::FoldersOnly));
     filter_combo_->addItem("Specify...", static_cast<int>(FileFilterType::Custom));
     filter_combo_->setMinimumWidth(100);
@@ -278,5 +280,3 @@ void FilterWidget::set_include_folders(bool include) {
 void FilterWidget::set_custom_extensions(const QStringList& extensions) {
     custom_extensions_ = extensions;
 }
-
-#include "FilterWidget.moc"

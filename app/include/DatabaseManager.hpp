@@ -64,9 +64,13 @@ public:
     bool save_quick_access_folders(const QString& session_folder, const QStringList& folders);
     QStringList get_quick_access_folders(const QString& session_folder);
     
+    // Maintenance
+    int cleanup_stale_sessions(int days_old = 30);
+    
 private:
     QSqlDatabase db_;
     QString db_path_;
+    QString connection_name_;
     
     bool create_tables();
     bool execute_query(const QString& query);

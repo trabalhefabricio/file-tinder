@@ -13,9 +13,9 @@ class DatabaseManager;
 
 struct DiagnosticTestResult {
     QString test_name;
-    bool passed;
+    bool passed = false;
     QString details;
-    int duration_ms;
+    int duration_ms = 0;
 };
 
 class DiagnosticTool : public QDialog {
@@ -39,7 +39,7 @@ private:
     void append_output(const QString& text, const QString& color = "white");
     void report_result(const DiagnosticTestResult& result);
     
-    // Individual tests
+    // Individual tests - System
     DiagnosticTestResult test_database_connection();
     DiagnosticTestResult test_database_operations();
     DiagnosticTestResult test_file_operations();
@@ -49,6 +49,23 @@ private:
     DiagnosticTestResult test_memory_usage();
     DiagnosticTestResult test_screen_info();
     DiagnosticTestResult test_qt_version();
+    
+    // Individual tests - Feature verification
+    DiagnosticTestResult test_session_persistence();
+    DiagnosticTestResult test_filter_sort();
+    DiagnosticTestResult test_folder_tree_model();
+    DiagnosticTestResult test_keyboard_shortcuts();
+    
+    // Feature-level tests (every button, every view, every feature)
+    DiagnosticTestResult test_basic_mode_ui();
+    DiagnosticTestResult test_advanced_mode_ui();
+    DiagnosticTestResult test_filter_widget();
+    DiagnosticTestResult test_image_preview_window();
+    DiagnosticTestResult test_dpi_scaling();
+    DiagnosticTestResult test_file_scanning();
+    DiagnosticTestResult test_mind_map_view();
+    DiagnosticTestResult test_close_behavior();
+    DiagnosticTestResult test_double_click_open();
     
     DatabaseManager& db_;
     QTextEdit* output_display_;
