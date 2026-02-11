@@ -30,7 +30,7 @@ namespace ui::dimensions {
     // Base values at 96 DPI (1x scale)
     // Standalone File Tinder (Basic Mode)
     constexpr int kStandaloneFileTinderMinWidth = 700;
-    constexpr int kStandaloneFileTinderMinHeight = 450;
+    constexpr int kStandaloneFileTinderMinHeight = 400;
     
     // Advanced File Tinder
     constexpr int kAdvancedFileTinderMinWidth = 800;

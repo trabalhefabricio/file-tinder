@@ -71,16 +71,9 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     
     setWindowTitle("File Tinder - Basic Mode");
     
-    // Enable proper window controls (close, minimize, maximize)
-    setWindowFlags(Qt::Window | Qt::WindowCloseButtonHint | 
-                   Qt::WindowMinMaxButtonsHint);
-    
     // DPI-aware minimum size
     setMinimumSize(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth),
                    ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinHeight));
-    
-    // Allow resizing
-    setSizeGripEnabled(true);
     
     // Setup resize timer for debouncing preview updates
     resize_timer_ = new QTimer(this);
@@ -1241,11 +1234,25 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
 }
 
 void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
-    // Guard against re-entrant close (done() can trigger reject() -> close() -> closeEvent again)
-    if (closing_) {
-        event->accept();
-        return;
+    // Route all close requests through reject() which handles save logic
+    // and properly terminates the exec() event loop.
+    event->ignore();
+    reject();
+}
+
+void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
+    QDialog::resizeEvent(event);
+    
+    // Use debounced timer to update preview after resize stops
+    // This prevents stutter during continuous resizing
+    if (resize_timer_) {
+        resize_timer_->start();  // Restart the timer on each resize event
     }
+}
+
+void StandaloneFileTinderDialog::reject() {
+    // Guard against re-entrant calls
+    if (closing_) return;
     closing_ = true;
     
     // Check if there are any pending decisions to save
@@ -1264,44 +1271,18 @@ void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
         
         if (reply == QMessageBox::Save) {
             save_session_state();
-            event->accept();
-        } else if (reply == QMessageBox::Discard) {
-            // Don't save, just close
-            event->accept();
-        } else {
-            // Cancel - don't close
+        } else if (reply == QMessageBox::Cancel) {
             closing_ = false;
-            event->ignore();
-            return;
+            return;  // Don't close
         }
+        // Discard: fall through to close without saving
     } else {
-        // No decisions made, just save and close
+        // No decisions made, just save state and close
         save_session_state();
-        event->accept();
     }
     
-    // Ensure exec() event loop terminates after close is accepted
-    if (event->isAccepted()) {
-        QDialog::done(QDialog::Rejected);
-    }
-}
-
-void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
-    QDialog::resizeEvent(event);
-    
-    // Use debounced timer to update preview after resize stops
-    // This prevents stutter during continuous resizing
-    if (resize_timer_) {
-        resize_timer_->start();  // Restart the timer on each resize event
-    }
-}
-
-void StandaloneFileTinderDialog::reject() {
-    // Override reject() so that Escape key and window close button both
-    // go through the same save-progress logic as closeEvent.
-    // Guard prevents re-entry when done(Rejected) calls reject().
-    if (closing_) return;
-    close();
+    // Properly terminate the exec() event loop
+    QDialog::reject();
 }
 
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {

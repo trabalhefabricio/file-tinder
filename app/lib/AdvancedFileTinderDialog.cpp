@@ -573,12 +573,18 @@ void AdvancedFileTinderDialog::show_current_file() {
 }
 
 void AdvancedFileTinderDialog::closeEvent(QCloseEvent* event) {
-    // Save advanced mode state before closing
+    // Route through reject() like base class
+    event->ignore();
+    reject();
+}
+
+void AdvancedFileTinderDialog::reject() {
+    // Save advanced-mode-specific state before base class handles close prompt
     save_folder_tree();
     save_quick_access();
     
-    // Call base class closeEvent for session state save and confirmation
-    StandaloneFileTinderDialog::closeEvent(event);
+    // Base class reject() shows save prompt and terminates exec()
+    StandaloneFileTinderDialog::reject();
 }
 
 void AdvancedFileTinderDialog::on_finish() {
