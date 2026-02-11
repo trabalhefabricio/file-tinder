@@ -71,7 +71,9 @@ private:
     
     // Override actions
     void on_finish() override;
+    void on_undo() override;
     void show_current_file() override;  // Override base class implementation
+    void closeEvent(QCloseEvent* event) override;
     
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;

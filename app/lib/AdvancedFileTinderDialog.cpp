@@ -6,6 +6,7 @@
 #include "FileTinderExecutor.hpp"
 #include "ui_constants.hpp"
 #include <QKeyEvent>
+#include <QCloseEvent>
 #include <QMenu>
 #include <QInputDialog>
 #include <QFileDialog>
@@ -143,6 +144,11 @@ void AdvancedFileTinderDialog::setup_filter_bar() {
     connect(filter_widget_, &FilterWidget::sort_changed, this, &AdvancedFileTinderDialog::on_sort_changed);
     connect(filter_widget_, &FilterWidget::include_folders_changed, this, [this](bool include) {
         include_folders_ = include;
+        // Reset counts before re-scanning and reloading state
+        keep_count_ = 0;
+        delete_count_ = 0;
+        skip_count_ = 0;
+        move_count_ = 0;
         scan_files();
         apply_sort();
         rebuild_filtered_indices();
@@ -560,10 +566,40 @@ void AdvancedFileTinderDialog::show_current_file() {
     }
 }
 
+void AdvancedFileTinderDialog::closeEvent(QCloseEvent* event) {
+    // Save advanced mode state before closing
+    save_folder_tree();
+    save_quick_access();
+    
+    // Call base class closeEvent for session state save and confirmation
+    StandaloneFileTinderDialog::closeEvent(event);
+}
+
 void AdvancedFileTinderDialog::on_finish() {
     save_folder_tree();
     save_quick_access();
     show_review_summary();
+}
+
+void AdvancedFileTinderDialog::on_undo() {
+    if (undo_stack_.empty()) return;
+    
+    // Peek at the action we're about to undo to handle folder model
+    const ActionRecord& last_action = undo_stack_.back();
+    
+    // If we're undoing a "move", unassign from the destination folder in the model
+    if (last_action.new_decision == "move" && folder_model_) {
+        int file_idx = last_action.file_index;
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            const auto& file = files_[file_idx];
+            if (!file.destination_folder.isEmpty()) {
+                folder_model_->unassign_file_from_folder(file.destination_folder);
+            }
+        }
+    }
+    
+    // Call base implementation to do the actual undo
+    StandaloneFileTinderDialog::on_undo();
 }
 
 void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {

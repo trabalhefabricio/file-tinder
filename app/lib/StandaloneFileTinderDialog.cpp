@@ -27,6 +27,7 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QPointer>
+#include <QSet>
 #include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
@@ -914,6 +915,7 @@ void StandaloneFileTinderDialog::advance_to_next() {
     
     // No more pending files in filter
     current_filtered_index_ = static_cast<int>(filtered_indices_.size());
+    if (file_icon_label_) file_icon_label_->clear();
     if (preview_label_) {
         preview_label_->setText("<div style='text-align: center; font-size: 48px;'>🎉</div>"
                                "<div style='text-align: center; font-size: 18px; color: #2ecc71;'>"
@@ -1109,11 +1111,22 @@ void StandaloneFileTinderDialog::show_review_summary() {
 void StandaloneFileTinderDialog::execute_decisions() {
     ExecutionPlan plan;
     
+    // Collect unique destination folders from move decisions
+    QSet<QString> dest_folders;
+    
     for (const auto& file : files_) {
         if (file.decision == "delete") {
             plan.files_to_delete.push_back(file.path);
         } else if (file.decision == "move" && !file.destination_folder.isEmpty()) {
             plan.files_to_move.push_back({file.path, file.destination_folder});
+            dest_folders.insert(file.destination_folder);
+        }
+    }
+    
+    // Ensure all destination folders exist (handles virtual folders from advanced mode)
+    for (const QString& folder : dest_folders) {
+        if (!QDir(folder).exists()) {
+            plan.folders_to_create.push_back(folder);
         }
     }
     
@@ -1273,6 +1286,11 @@ void StandaloneFileTinderDialog::on_sort_order_toggled() {
 
 void StandaloneFileTinderDialog::on_folders_toggle_changed(int state) {
     include_folders_ = (state == Qt::Checked);
+    // Reset counts before re-scanning and reloading state
+    keep_count_ = 0;
+    delete_count_ = 0;
+    skip_count_ = 0;
+    move_count_ = 0;
     scan_files();  // Re-scan with new settings
     apply_sort();
     rebuild_filtered_indices();
