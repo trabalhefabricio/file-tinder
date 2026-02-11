@@ -272,6 +272,15 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     connect(delete_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_delete);
     action_layout->addWidget(delete_btn_, 1);
     
+    keep_btn_ = new QPushButton("Keep [K]");
+    keep_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    keep_btn_->setStyleSheet(QString(
+        "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
+        "QPushButton:hover { background-color: #27ae60; }"
+    ).arg(ui::colors::kKeepColor));
+    connect(keep_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_keep);
+    action_layout->addWidget(keep_btn_, 1);
+    
     skip_btn_ = new QPushButton("Skip [Down]");
     skip_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
     skip_btn_->setStyleSheet(QString(
@@ -289,6 +298,17 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     );
     connect(back_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_back);
     action_layout->addWidget(back_btn_, 1);
+    
+    undo_btn_ = new QPushButton("Undo [Z]");
+    undo_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    undo_btn_->setStyleSheet(
+        "QPushButton { background-color: #9b59b6; color: white; font-weight: bold; border-radius: 4px; }"
+        "QPushButton:hover { background-color: #8e44ad; }"
+        "QPushButton:disabled { background-color: #5d4e6e; color: #888; }"
+    );
+    undo_btn_->setEnabled(false);
+    connect(undo_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_undo);
+    action_layout->addWidget(undo_btn_, 1);
     
     static_cast<QVBoxLayout*>(layout())->addWidget(action_widget);
     
@@ -328,6 +348,8 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     
     auto& file = files_[file_idx];
     
+    QString old_decision = file.decision;
+    
     // Update counts
     if (file.decision != "pending") {
         update_decision_count(file.decision, -1);
@@ -339,6 +361,9 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     file.decision = "move";
     file.destination_folder = folder_path;
     move_count_++;
+    
+    // Record for undo
+    record_action(file_idx, old_decision, "move", folder_path);
     
     if (folder_model_) folder_model_->assign_file_to_folder(folder_path);
     if (mind_map_view_) mind_map_view_->set_selected_folder(folder_path);
@@ -564,6 +589,12 @@ void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
             break;
         case Qt::Key_Right:
             // In Advanced Mode, right doesn't auto-keep, need to select folder
+            break;
+        case Qt::Key_K:
+            on_keep();
+            break;
+        case Qt::Key_Z:
+            on_undo();
             break;
         case Qt::Key_Down:
             on_skip();

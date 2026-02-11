@@ -126,6 +126,7 @@ void FilterWidget::setup_ui() {
     filter_combo_->addItem("Audio", static_cast<int>(FileFilterType::Audio));
     filter_combo_->addItem("Documents", static_cast<int>(FileFilterType::Documents));
     filter_combo_->addItem("Archives", static_cast<int>(FileFilterType::Archives));
+    filter_combo_->addItem("Other", static_cast<int>(FileFilterType::Other));
     filter_combo_->addItem("Folders Only", static_cast<int>(FileFilterType::FoldersOnly));
     filter_combo_->addItem("Specify...", static_cast<int>(FileFilterType::Custom));
     filter_combo_->setMinimumWidth(100);

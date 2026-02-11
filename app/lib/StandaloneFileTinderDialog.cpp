@@ -679,6 +679,12 @@ void StandaloneFileTinderDialog::record_action(int file_index, const QString& ol
     if (undo_btn_) {
         undo_btn_->setEnabled(true);
     }
+    
+    // Save this decision to DB immediately (crash safety)
+    if (file_index >= 0 && file_index < static_cast<int>(files_.size())) {
+        const auto& file = files_[file_index];
+        db_.save_file_decision(source_folder_, file.path, new_decision, dest_folder);
+    }
 }
 
 void StandaloneFileTinderDialog::on_keep() {
@@ -794,6 +800,10 @@ void StandaloneFileTinderDialog::on_undo() {
         // Restore previous decision
         file.decision = last_action.previous_decision;
         file.destination_folder = last_action.destination_folder;
+        
+        // Save restored decision to DB immediately
+        db_.save_file_decision(source_folder_, file.path, 
+                              last_action.previous_decision, last_action.destination_folder);
         
         // Increment count for the restored decision (if not pending)
         if (last_action.previous_decision != "pending") {
@@ -1114,7 +1124,9 @@ void StandaloneFileTinderDialog::execute_decisions() {
     
     FileTinderExecutor executor;
     auto result = executor.execute(plan, [&](int current, int total, const QString& msg) {
-        progress.setValue(current * 100 / total);
+        if (total > 0) {
+            progress.setValue(current * 100 / total);
+        }
         progress.setLabelText(msg);
         QApplication::processEvents();
     });

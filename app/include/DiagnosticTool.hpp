@@ -13,9 +13,9 @@ class DatabaseManager;
 
 struct DiagnosticTestResult {
     QString test_name;
-    bool passed;
+    bool passed = false;
     QString details;
-    int duration_ms;
+    int duration_ms = 0;
 };
 
 class DiagnosticTool : public QDialog {
