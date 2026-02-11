@@ -141,6 +141,9 @@ protected:
     // Resize debounce timer
     QTimer* resize_timer_;
     
+    // Close guard to prevent re-entrant close
+    bool closing_ = false;
+    
     // Initialization
     virtual void setup_ui();
     void scan_files();

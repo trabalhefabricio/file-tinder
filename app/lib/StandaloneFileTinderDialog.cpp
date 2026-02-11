@@ -1241,6 +1241,13 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
 }
 
 void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
+    // Guard against re-entrant close (done() can trigger reject() → close() → closeEvent again)
+    if (closing_) {
+        event->accept();
+        return;
+    }
+    closing_ = true;
+    
     // Check if there are any pending decisions to save
     int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
     
@@ -1263,6 +1270,7 @@ void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
             event->accept();
         } else {
             // Cancel - don't close
+            closing_ = false;
             event->ignore();
             return;
         }
@@ -1291,6 +1299,8 @@ void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
 void StandaloneFileTinderDialog::reject() {
     // Override reject() so that Escape key and window close button both
     // go through the same save-progress logic as closeEvent.
+    // Guard prevents re-entry when done(Rejected) calls reject().
+    if (closing_) return;
     close();
 }
 

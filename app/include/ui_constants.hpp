@@ -30,7 +30,7 @@ namespace ui::dimensions {
     // Base values at 96 DPI (1x scale)
     // Standalone File Tinder (Basic Mode)
     constexpr int kStandaloneFileTinderMinWidth = 700;
-    constexpr int kStandaloneFileTinderMinHeight = 550;
+    constexpr int kStandaloneFileTinderMinHeight = 450;
     
     // Advanced File Tinder
     constexpr int kAdvancedFileTinderMinWidth = 800;
@@ -59,7 +59,7 @@ namespace ui::dimensions {
     
     // Main action buttons (2x larger for Keep/Delete)
     constexpr int kMainButtonWidth = 200;
-    constexpr int kMainButtonHeight = 100;
+    constexpr int kMainButtonHeight = 70;
     constexpr int kSecondaryButtonWidth = 100;
     constexpr int kSecondaryButtonHeight = 50;
     constexpr int kThinButtonHeight = 40;  // For Back/Skip below
