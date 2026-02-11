@@ -167,7 +167,6 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     map_layout->setContentsMargins(5, 15, 5, 5);
     
     mind_map_view_ = new MindMapView();
-    mind_map_view_->setMinimumHeight(350);
     mind_map_view_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     
     connect(mind_map_view_, &MindMapView::folder_clicked, 
