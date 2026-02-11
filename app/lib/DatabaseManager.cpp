@@ -397,14 +397,15 @@ int DatabaseManager::cleanup_stale_sessions(int days_old) {
     
     QSqlQuery stale_query(db_);
     // Find sessions with all decisions older than N days
+    QString modifier = QString("-%1 days").arg(days_old);
     stale_query.prepare(R"(
         SELECT DISTINCT folder_path FROM file_tinder_state 
         WHERE folder_path NOT IN (
             SELECT DISTINCT folder_path FROM file_tinder_state 
-            WHERE timestamp > datetime('now', ? || ' days')
+            WHERE timestamp > datetime('now', ?)
         )
     )");
-    stale_query.addBindValue(QString("-%1").arg(days_old));
+    stale_query.addBindValue(modifier);
     
     QStringList stale_folders;
     if (stale_query.exec()) {
