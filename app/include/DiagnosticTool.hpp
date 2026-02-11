@@ -56,6 +56,17 @@ private:
     DiagnosticTestResult test_folder_tree_model();
     DiagnosticTestResult test_keyboard_shortcuts();
     
+    // Feature-level tests (every button, every view, every feature)
+    DiagnosticTestResult test_basic_mode_ui();
+    DiagnosticTestResult test_advanced_mode_ui();
+    DiagnosticTestResult test_filter_widget();
+    DiagnosticTestResult test_image_preview_window();
+    DiagnosticTestResult test_dpi_scaling();
+    DiagnosticTestResult test_file_scanning();
+    DiagnosticTestResult test_mind_map_view();
+    DiagnosticTestResult test_close_behavior();
+    DiagnosticTestResult test_double_click_open();
+    
     DatabaseManager& db_;
     QTextEdit* output_display_;
     QProgressBar* progress_bar_;
