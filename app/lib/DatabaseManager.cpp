@@ -392,6 +392,85 @@ QStringList DatabaseManager::get_quick_access_folders(const QString& session_fol
     return folders;
 }
 
+bool DatabaseManager::save_execution_log(const QString& session_folder, const QString& action,
+                                         const QString& source_path, const QString& dest_path) {
+    // Ensure table exists
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS execution_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            action TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            dest_path TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    )");
+    
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        INSERT INTO execution_log (session_folder, action, source_path, dest_path)
+        VALUES (?, ?, ?, ?)
+    )");
+    query.addBindValue(session_folder);
+    query.addBindValue(action);
+    query.addBindValue(source_path);
+    query.addBindValue(dest_path);
+    return query.exec();
+}
+
+std::vector<std::tuple<int, QString, QString, QString, QString>> DatabaseManager::get_execution_log(const QString& session_folder) {
+    std::vector<std::tuple<int, QString, QString, QString, QString>> entries;
+    
+    // Ensure table exists
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS execution_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            action TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            dest_path TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    )");
+    
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        SELECT id, action, source_path, dest_path, timestamp
+        FROM execution_log
+        WHERE session_folder = ?
+        ORDER BY id DESC
+    )");
+    query.addBindValue(session_folder);
+    
+    if (query.exec()) {
+        while (query.next()) {
+            entries.emplace_back(
+                query.value(0).toInt(),
+                query.value(1).toString(),
+                query.value(2).toString(),
+                query.value(3).toString(),
+                query.value(4).toString()
+            );
+        }
+    }
+    
+    return entries;
+}
+
+bool DatabaseManager::remove_execution_log_entry(int id) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM execution_log WHERE id = ?");
+    query.addBindValue(id);
+    return query.exec();
+}
+
+bool DatabaseManager::clear_execution_log(const QString& session_folder) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM execution_log WHERE session_folder = ?");
+    query.addBindValue(session_folder);
+    return query.exec();
+}
+
 int DatabaseManager::cleanup_stale_sessions(int days_old) {
     int cleaned = 0;
     

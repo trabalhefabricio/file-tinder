@@ -12,6 +12,14 @@ struct ExecutionPlan {
     std::vector<QString> folders_to_create;
 };
 
+// Record of a single executed action for undo support
+struct ExecutionLogEntry {
+    QString action;            // "move", "delete", "folder_create"
+    QString source_path;       // Original file location
+    QString dest_path;         // Where it ended up (for move: dest file, for delete: trash path)
+    bool success;
+};
+
 struct ExecutionResult {
     int files_deleted = 0;
     int files_moved = 0;
@@ -19,6 +27,7 @@ struct ExecutionResult {
     int errors = 0;
     QStringList error_messages;
     bool success = true;
+    std::vector<ExecutionLogEntry> log;  // Detailed log for undo
 };
 
 class FileTinderExecutor {
@@ -29,6 +38,9 @@ public:
     ~FileTinderExecutor();
     
     ExecutionResult execute(const ExecutionPlan& plan, ProgressCallback progress_callback = nullptr);
+    
+    // Undo a single executed action (move back / restore from trash)
+    static bool undo_action(const ExecutionLogEntry& entry);
     
     // Configuration
     void set_move_to_trash(bool use_trash) { use_trash_ = use_trash; }
@@ -44,7 +56,7 @@ private:
                    ExecutionResult& result, ProgressCallback callback, int& progress, int total);
     bool delete_files(const std::vector<QString>& files, ExecutionResult& result,
                      ProgressCallback callback, int& progress, int total);
-    bool move_to_trash(const QString& file_path);
+    bool move_to_trash(const QString& file_path, QString& trash_path);
 };
 
 #endif // FILE_TINDER_EXECUTOR_HPP

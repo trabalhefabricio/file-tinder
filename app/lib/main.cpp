@@ -13,10 +13,14 @@
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QFileInfo>
 
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
 #include "AdvancedFileTinderDialog.hpp"
+#include "FileTinderExecutor.hpp"
 #include "AppLogger.hpp"
 #include "DiagnosticTool.hpp"
 #include "ui_constants.hpp"
@@ -168,7 +172,7 @@ private:
         
         root_layout->addLayout(modes_row);
         
-        // Tools row: Clear Session + Diagnostics
+        // Tools row: Clear Session + Undo History + Diagnostics
         auto* tools_row = new QHBoxLayout();
         
         auto* clear_btn = new QPushButton("Clear Session");
@@ -178,6 +182,14 @@ private:
         );
         connect(clear_btn, &QPushButton::clicked, this, &FileTinderLauncher::clear_session);
         tools_row->addWidget(clear_btn);
+        
+        auto* undo_history_btn = new QPushButton("Undo History");
+        undo_history_btn->setStyleSheet(
+            "QPushButton { padding: 6px 12px; background-color: #4a4a4a; color: #cccccc; border: 1px solid #555555; }"
+            "QPushButton:hover { background-color: #555555; }"
+        );
+        connect(undo_history_btn, &QPushButton::clicked, this, &FileTinderLauncher::show_undo_history);
+        tools_row->addWidget(undo_history_btn);
         
         tools_row->addStretch();
         
@@ -283,6 +295,117 @@ private:
             LOG_INFO("Launcher", QString("Session cleared for: %1").arg(chosen_path_));
             QMessageBox::information(this, "Session Cleared", "Saved progress has been cleared.");
         }
+    }
+    
+    void show_undo_history() {
+        if (chosen_path_.isEmpty()) {
+            QMessageBox::information(this, "No Folder", "Select a folder first to view its undo history.");
+            return;
+        }
+        
+        auto log_entries = db_manager_.get_execution_log(chosen_path_);
+        
+        if (log_entries.empty()) {
+            QMessageBox::information(this, "No History", "No executed actions to undo for this folder.");
+            return;
+        }
+        
+        QDialog dialog(this);
+        dialog.setWindowTitle("Undo History");
+        dialog.setMinimumSize(600, 400);
+        
+        auto* layout = new QVBoxLayout(&dialog);
+        
+        auto* info_label = new QLabel(QString("Executed actions for: %1\nClick Undo to reverse an action.")
+            .arg(chosen_path_));
+        info_label->setWordWrap(true);
+        layout->addWidget(info_label);
+        
+        auto* table = new QTableWidget();
+        table->setColumnCount(5);
+        table->setHorizontalHeaderLabels({"Action", "File", "Destination", "Time", "Undo"});
+        table->horizontalHeader()->setStretchLastSection(true);
+        table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table->setRowCount(static_cast<int>(log_entries.size()));
+        
+        for (int i = 0; i < static_cast<int>(log_entries.size()); ++i) {
+            const auto& [id, action, src, dst, ts] = log_entries[i];
+            
+            auto* action_item = new QTableWidgetItem(action);
+            action_item->setFlags(action_item->flags() & ~Qt::ItemIsEditable);
+            table->setItem(i, 0, action_item);
+            
+            auto* file_item = new QTableWidgetItem(QFileInfo(src).fileName());
+            file_item->setFlags(file_item->flags() & ~Qt::ItemIsEditable);
+            file_item->setToolTip(src);
+            table->setItem(i, 1, file_item);
+            
+            QString dest_display = action == "delete" ? "(trash)" : QFileInfo(dst).fileName();
+            auto* dest_item = new QTableWidgetItem(dest_display);
+            dest_item->setFlags(dest_item->flags() & ~Qt::ItemIsEditable);
+            dest_item->setToolTip(dst);
+            table->setItem(i, 2, dest_item);
+            
+            auto* time_item = new QTableWidgetItem(ts);
+            time_item->setFlags(time_item->flags() & ~Qt::ItemIsEditable);
+            table->setItem(i, 3, time_item);
+            
+            auto* undo_btn = new QPushButton("Undo");
+            undo_btn->setStyleSheet(
+                "QPushButton { background-color: #e67e22; color: white; padding: 2px 8px; border-radius: 3px; }"
+                "QPushButton:hover { background-color: #d35400; }"
+                "QPushButton:disabled { background-color: #7f8c8d; color: #bdc3c7; }"
+            );
+            connect(undo_btn, &QPushButton::clicked, this, [this, id, action, src, dst, undo_btn, action_item]() {
+                ExecutionLogEntry entry;
+                entry.action = action;
+                entry.source_path = src;
+                entry.dest_path = dst;
+                entry.success = true;
+                
+                if (FileTinderExecutor::undo_action(entry)) {
+                    undo_btn->setEnabled(false);
+                    undo_btn->setText("Done ✓");
+                    action_item->setText(action + " (undone)");
+                    db_manager_.remove_execution_log_entry(id);
+                    LOG_INFO("UndoHistory", QString("Undone: %1 %2").arg(action, src));
+                } else {
+                    QMessageBox::warning(this, "Undo Failed",
+                        "Could not undo this action.\nThe file may have been modified or removed.");
+                }
+            });
+            table->setCellWidget(i, 4, undo_btn);
+        }
+        
+        table->resizeColumnsToContents();
+        layout->addWidget(table, 1);
+        
+        auto* btn_layout = new QHBoxLayout();
+        btn_layout->addStretch();
+        
+        auto* clear_log_btn = new QPushButton("Clear History");
+        clear_log_btn->setStyleSheet(
+            "QPushButton { padding: 6px 12px; background-color: #e74c3c; color: white; border-radius: 3px; }"
+            "QPushButton:hover { background-color: #c0392b; }"
+        );
+        connect(clear_log_btn, &QPushButton::clicked, this, [this, &dialog]() {
+            auto reply = QMessageBox::question(this, "Clear History",
+                "This will remove all undo history. You won't be able to reverse past actions.\n\nProceed?",
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (reply == QMessageBox::Yes) {
+                db_manager_.clear_execution_log(chosen_path_);
+                dialog.accept();
+            }
+        });
+        btn_layout->addWidget(clear_log_btn);
+        
+        auto* close_btn = new QPushButton("Close");
+        connect(close_btn, &QPushButton::clicked, &dialog, &QDialog::accept);
+        btn_layout->addWidget(close_btn);
+        
+        layout->addLayout(btn_layout);
+        
+        dialog.exec();
     }
 };
 

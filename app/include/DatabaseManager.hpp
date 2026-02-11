@@ -64,6 +64,13 @@ public:
     bool save_quick_access_folders(const QString& session_folder, const QStringList& folders);
     QStringList get_quick_access_folders(const QString& session_folder);
     
+    // Execution log (for undo support)
+    bool save_execution_log(const QString& session_folder, const QString& action,
+                           const QString& source_path, const QString& dest_path);
+    std::vector<std::tuple<int, QString, QString, QString, QString>> get_execution_log(const QString& session_folder);
+    bool remove_execution_log_entry(int id);
+    bool clear_execution_log(const QString& session_folder);
+    
     // Maintenance
     int cleanup_stale_sessions(int days_old = 30);
     

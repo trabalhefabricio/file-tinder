@@ -72,9 +72,11 @@ bool FileTinderExecutor::create_folders(const std::vector<QString>& folders,
         QDir dir;
         if (dir.mkpath(folder_path)) {
             result.folders_created++;
+            result.log.push_back({"folder_create", folder_path, folder_path, true});
         } else {
             result.errors++;
             result.error_messages.append(QString("Failed to create folder: %1").arg(folder_path));
+            result.log.push_back({"folder_create", folder_path, "", false});
             all_success = false;
         }
         
@@ -99,6 +101,7 @@ bool FileTinderExecutor::move_files(const std::vector<std::pair<QString, QString
         if (!QFile::exists(source)) {
             result.errors++;
             result.error_messages.append(QString("Source file no longer exists: %1").arg(source));
+            result.log.push_back({"move", source, "", false});
             all_success = false;
             progress++;
             continue;
@@ -140,6 +143,7 @@ bool FileTinderExecutor::move_files(const std::vector<std::pair<QString, QString
                 if (counter > max_attempts) {
                     result.errors++;
                     result.error_messages.append(QString("Failed to generate unique name for: %1").arg(source));
+                    result.log.push_back({"move", source, "", false});
                     all_success = false;
                     progress++;
                     continue;
@@ -149,18 +153,22 @@ bool FileTinderExecutor::move_files(const std::vector<std::pair<QString, QString
         
         if (QFile::rename(source, dest_path)) {
             result.files_moved++;
+            result.log.push_back({"move", source, dest_path, true});
         } else {
             // Try copy and delete as fallback
             if (QFile::copy(source, dest_path)) {
                 if (QFile::remove(source)) {
                     result.files_moved++;
+                    result.log.push_back({"move", source, dest_path, true});
                 } else {
                     result.error_messages.append(QString("Moved but failed to remove source: %1").arg(source));
                     result.files_moved++;
+                    result.log.push_back({"move", source, dest_path, true});
                 }
             } else {
                 result.errors++;
                 result.error_messages.append(QString("Failed to move: %1 to %2").arg(source, dest_path));
+                result.log.push_back({"move", source, dest_path, false});
                 all_success = false;
             }
         }
@@ -186,29 +194,34 @@ bool FileTinderExecutor::delete_files(const std::vector<QString>& files,
         if (!QFile::exists(file_path)) {
             result.errors++;
             result.error_messages.append(QString("File no longer exists (already deleted?): %1").arg(file_path));
+            result.log.push_back({"delete", file_path, "", false});
             all_success = false;
             progress++;
             continue;
         }
         
         bool deleted = false;
+        QString trash_path;
         
         if (use_trash_) {
-            deleted = move_to_trash(file_path);
+            deleted = move_to_trash(file_path, trash_path);
         }
         
         if (!deleted) {
-            // Fallback to permanent delete
+            // Fallback to permanent delete (no undo possible)
             if (QFile::remove(file_path)) {
                 deleted = true;
+                trash_path.clear();  // No trash path for permanent delete
             }
         }
         
         if (deleted) {
             result.files_deleted++;
+            result.log.push_back({"delete", file_path, trash_path, true});
         } else {
             result.errors++;
             result.error_messages.append(QString("Failed to delete: %1").arg(file_path));
+            result.log.push_back({"delete", file_path, "", false});
             all_success = false;
         }
         
@@ -218,9 +231,10 @@ bool FileTinderExecutor::delete_files(const std::vector<QString>& files,
     return all_success;
 }
 
-bool FileTinderExecutor::move_to_trash(const QString& file_path) {
+bool FileTinderExecutor::move_to_trash(const QString& file_path, QString& trash_path) {
+    trash_path.clear();
 #ifdef Q_OS_WIN
-    // Windows: Use SHFileOperation
+    // Windows: Use SHFileOperation (trash_path not trackable via this API)
     QString native_path = QDir::toNativeSeparators(file_path);
     native_path.append(QChar(0)).append(QChar(0)); // Double null-terminated as required by API
     
@@ -233,7 +247,7 @@ bool FileTinderExecutor::move_to_trash(const QString& file_path) {
     return SHFileOperationW(&op) == 0;
     
 #elif defined(Q_OS_MACOS)
-    // macOS: Use osascript
+    // macOS: Use osascript (trash_path not trackable via this API)
     QProcess process;
     QString script = QString("tell application \"Finder\" to delete POSIX file \"%1\"")
                         .arg(file_path);
@@ -248,12 +262,15 @@ bool FileTinderExecutor::move_to_trash(const QString& file_path) {
     process.waitForFinished(5000);
     
     if (process.exitCode() == 0) {
+        // gio trash doesn't tell us the exact trash path, but we can guess
+        QString trash_dir_path = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Trash/files";
+        trash_path = trash_dir_path + "/" + QFileInfo(file_path).fileName();
         return true;
     }
     
     // Fallback: Move to XDG trash directory
-    QString trash_path = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Trash/files";
-    QDir trash_dir(trash_path);
+    QString trash_dir_path = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Trash/files";
+    QDir trash_dir(trash_dir_path);
     if (!trash_dir.exists()) {
         trash_dir.mkpath(".");
     }
@@ -278,9 +295,66 @@ bool FileTinderExecutor::move_to_trash(const QString& file_path) {
         return false;  // Failed to generate unique name
     }
     
-    return QFile::rename(file_path, dest);
+    if (QFile::rename(file_path, dest)) {
+        trash_path = dest;
+        return true;
+    }
+    return false;
 #else
     // Unsupported platform - just delete
     return QFile::remove(file_path);
 #endif
+}
+
+bool FileTinderExecutor::undo_action(const ExecutionLogEntry& entry) {
+    if (!entry.success) return false;
+    
+    if (entry.action == "move") {
+        // Move file back to original location
+        if (entry.dest_path.isEmpty() || entry.source_path.isEmpty()) return false;
+        if (!QFile::exists(entry.dest_path)) return false;
+        
+        // Ensure the original directory exists
+        QDir().mkpath(QFileInfo(entry.source_path).absolutePath());
+        
+        if (QFile::rename(entry.dest_path, entry.source_path)) {
+            return true;
+        }
+        // Fallback: copy + delete
+        if (QFile::copy(entry.dest_path, entry.source_path)) {
+            QFile::remove(entry.dest_path);
+            return true;
+        }
+        return false;
+    }
+    
+    if (entry.action == "delete") {
+        // Restore from trash if we have a trash path
+        if (entry.dest_path.isEmpty() || entry.source_path.isEmpty()) return false;
+        if (!QFile::exists(entry.dest_path)) return false;
+        
+        // Ensure the original directory exists
+        QDir().mkpath(QFileInfo(entry.source_path).absolutePath());
+        
+        if (QFile::rename(entry.dest_path, entry.source_path)) {
+            return true;
+        }
+        // Fallback: copy + delete
+        if (QFile::copy(entry.dest_path, entry.source_path)) {
+            QFile::remove(entry.dest_path);
+            return true;
+        }
+        return false;
+    }
+    
+    if (entry.action == "folder_create") {
+        // Remove empty folder (only if it's now empty)
+        QDir dir(entry.source_path);
+        if (dir.exists() && dir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
+            return dir.rmdir(".");
+        }
+        return false;
+    }
+    
+    return false;
 }

@@ -22,6 +22,7 @@ class DatabaseManager;
 class QPropertyAnimation;
 class QGraphicsOpacityEffect;
 class ImagePreviewWindow;
+struct ExecutionResult;
 
 // Action record for undo functionality
 struct ActionRecord {
@@ -197,6 +198,7 @@ protected:
     // Review screen
     void show_review_summary();
     void execute_decisions();
+    void show_execution_results(const ExecutionResult& result, qint64 elapsed_ms);
     
     // Help
     void show_shortcuts_help();

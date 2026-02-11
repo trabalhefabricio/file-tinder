@@ -32,6 +32,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QMouseEvent>
+#include <QElapsedTimer>
 #include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
@@ -1254,6 +1255,9 @@ void StandaloneFileTinderDialog::execute_decisions() {
     progress.setWindowModality(Qt::WindowModal);
     progress.show();
     
+    QElapsedTimer timer;
+    timer.start();
+    
     FileTinderExecutor executor;
     auto result = executor.execute(plan, [&](int current, int total, const QString& msg) {
         if (total > 0) {
@@ -1263,29 +1267,167 @@ void StandaloneFileTinderDialog::execute_decisions() {
         QApplication::processEvents();
     });
     
+    qint64 elapsed_ms = timer.elapsed();
     progress.close();
     
-    // Show result
-    QString message = QString(
-        "Execution complete!\n\n"
-        "Files deleted: %1\n"
-        "Files moved: %2\n"
-        "Folders created: %3\n"
-        "Errors: %4"
-    ).arg(result.files_deleted).arg(result.files_moved)
-     .arg(result.folders_created).arg(result.errors);
-    
-    if (!result.error_messages.isEmpty()) {
-        message += "\n\nErrors:\n" + result.error_messages.join("\n");
+    // Save execution log to database for undo support
+    for (const auto& entry : result.log) {
+        if (entry.success) {
+            db_.save_execution_log(source_folder_, entry.action, entry.source_path, entry.dest_path);
+        }
     }
     
-    QMessageBox::information(this, "Execution Complete", message);
+    // Show execution results dialog with undo + stats
+    show_execution_results(result, elapsed_ms);
     
-    // Clear session
+    // Clear session decisions (but execution log persists for undo)
     db_.clear_session(source_folder_);
     
     emit session_completed();
     accept();
+}
+
+void StandaloneFileTinderDialog::show_execution_results(const ExecutionResult& result, qint64 elapsed_ms) {
+    QDialog results_dialog(this);
+    results_dialog.setWindowTitle("Execution Complete");
+    results_dialog.setMinimumSize(ui::scaling::scaled(700), ui::scaling::scaled(500));
+    
+    auto* layout = new QVBoxLayout(&results_dialog);
+    
+    // Session statistics (Req 9)
+    auto* stats_group = new QGroupBox("Session Statistics");
+    stats_group->setStyleSheet("QGroupBox { font-weight: bold; }");
+    auto* stats_layout = new QVBoxLayout(stats_group);
+    
+    int total_files = static_cast<int>(files_.size());
+    int total_reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    double elapsed_sec = elapsed_ms / 1000.0;
+    double files_per_min = elapsed_sec > 0 ? (total_reviewed / elapsed_sec * 60.0) : 0;
+    
+    auto* stats_text = new QLabel(QString(
+        "Total files scanned: %1\n"
+        "Files reviewed: %2\n"
+        "  • Kept: %3\n"
+        "  • Deleted: %4\n"
+        "  • Skipped: %5\n"
+        "  • Moved: %6\n\n"
+        "Execution time: %7s\n"
+        "Files moved: %8 | Files deleted: %9 | Errors: %10"
+    ).arg(total_files).arg(total_reviewed)
+     .arg(keep_count_).arg(delete_count_).arg(skip_count_).arg(move_count_)
+     .arg(elapsed_sec, 0, 'f', 1)
+     .arg(result.files_moved).arg(result.files_deleted).arg(result.errors));
+    stats_text->setStyleSheet("font-size: 12px; padding: 8px;");
+    stats_layout->addWidget(stats_text);
+    
+    if (files_per_min > 0) {
+        auto* pace_label = new QLabel(QString("Review pace: ~%1 files/minute")
+            .arg(files_per_min, 0, 'f', 1));
+        pace_label->setStyleSheet("color: #3498db; font-style: italic;");
+        stats_layout->addWidget(pace_label);
+    }
+    
+    layout->addWidget(stats_group);
+    
+    if (!result.error_messages.isEmpty()) {
+        auto* errors_label = new QLabel("Errors:\n" + result.error_messages.join("\n"));
+        errors_label->setStyleSheet("color: #e74c3c; font-size: 11px; padding: 4px;");
+        errors_label->setWordWrap(true);
+        layout->addWidget(errors_label);
+    }
+    
+    // Execution log with undo (Req 8)
+    auto successful_entries = result.log;
+    successful_entries.erase(
+        std::remove_if(successful_entries.begin(), successful_entries.end(),
+            [](const ExecutionLogEntry& e) { return !e.success; }),
+        successful_entries.end());
+    
+    if (!successful_entries.empty()) {
+        auto* log_label = new QLabel(QString("Execution Log (%1 actions — click Undo to reverse):")
+            .arg(successful_entries.size()));
+        log_label->setStyleSheet("font-weight: bold; margin-top: 8px;");
+        layout->addWidget(log_label);
+        
+        auto* table = new QTableWidget();
+        table->setColumnCount(4);
+        table->setHorizontalHeaderLabels({"Action", "File", "Destination", "Undo"});
+        table->horizontalHeader()->setStretchLastSection(true);
+        table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table->setRowCount(static_cast<int>(successful_entries.size()));
+        
+        for (int i = 0; i < static_cast<int>(successful_entries.size()); ++i) {
+            const auto& entry = successful_entries[i];
+            
+            auto* action_item = new QTableWidgetItem(entry.action);
+            action_item->setFlags(action_item->flags() & ~Qt::ItemIsEditable);
+            table->setItem(i, 0, action_item);
+            
+            auto* file_item = new QTableWidgetItem(QFileInfo(entry.source_path).fileName());
+            file_item->setFlags(file_item->flags() & ~Qt::ItemIsEditable);
+            file_item->setToolTip(entry.source_path);
+            table->setItem(i, 1, file_item);
+            
+            QString dest_display;
+            if (!entry.dest_path.isEmpty()) {
+                dest_display = entry.action == "delete" ? "(trash)" : QFileInfo(entry.dest_path).fileName();
+            }
+            auto* dest_item = new QTableWidgetItem(dest_display);
+            dest_item->setFlags(dest_item->flags() & ~Qt::ItemIsEditable);
+            dest_item->setToolTip(entry.dest_path);
+            table->setItem(i, 2, dest_item);
+            
+            auto* undo_btn = new QPushButton("Undo");
+            undo_btn->setStyleSheet(
+                "QPushButton { background-color: #e67e22; color: white; padding: 2px 8px; border-radius: 3px; }"
+                "QPushButton:hover { background-color: #d35400; }"
+                "QPushButton:disabled { background-color: #7f8c8d; color: #bdc3c7; }"
+            );
+            connect(undo_btn, &QPushButton::clicked, this, [this, entry, undo_btn, action_item, i, table]() {
+                if (FileTinderExecutor::undo_action(entry)) {
+                    undo_btn->setEnabled(false);
+                    undo_btn->setText("Done ✓");
+                    action_item->setText(entry.action + " (undone)");
+                    
+                    // Remove from database log
+                    auto log_entries = db_.get_execution_log(source_folder_);
+                    for (const auto& [id, action, src, dst, ts] : log_entries) {
+                        if (src == entry.source_path && action == entry.action) {
+                            db_.remove_execution_log_entry(id);
+                            break;
+                        }
+                    }
+                    
+                    LOG_INFO("Execution", QString("Undone: %1 %2").arg(entry.action, entry.source_path));
+                } else {
+                    QMessageBox::warning(undo_btn->parentWidget(), "Undo Failed",
+                        QString("Could not undo this action.\nThe file may have been modified or removed."));
+                }
+            });
+            table->setCellWidget(i, 3, undo_btn);
+        }
+        
+        table->resizeColumnsToContents();
+        table->setColumnWidth(1, qMax(table->columnWidth(1), 200));
+        layout->addWidget(table, 1);
+    }
+    
+    // Close button
+    auto* btn_layout = new QHBoxLayout();
+    btn_layout->addStretch();
+    
+    auto* close_btn = new QPushButton("Close");
+    close_btn->setStyleSheet(
+        "QPushButton { background-color: #27ae60; color: white; font-weight: bold; "
+        "padding: 10px 25px; border-radius: 6px; }"
+        "QPushButton:hover { background-color: #2ecc71; }"
+    );
+    connect(close_btn, &QPushButton::clicked, &results_dialog, &QDialog::accept);
+    btn_layout->addWidget(close_btn);
+    
+    layout->addLayout(btn_layout);
+    
+    results_dialog.exec();
 }
 
 void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
