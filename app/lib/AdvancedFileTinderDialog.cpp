@@ -11,7 +11,6 @@
 #include <QInputDialog>
 #include <QFileDialog>
 #include <QMessageBox>
-#include <QToolButton>
 #include <QProgressDialog>
 #include <QGroupBox>
 #include <QScrollArea>
@@ -81,27 +80,6 @@ void AdvancedFileTinderDialog::setup_ui() {
     title_layout->addWidget(title_label);
     
     title_layout->addStretch();
-    
-    // Zoom controls
-    auto* zoom_out_btn = new QToolButton();
-    zoom_out_btn->setText("-");
-    zoom_out_btn->setToolTip("Zoom Out");
-    connect(zoom_out_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_out);
-    title_layout->addWidget(zoom_out_btn);
-    
-    auto* zoom_in_btn = new QToolButton();
-    zoom_in_btn->setText("+");
-    zoom_in_btn->setToolTip("Zoom In");
-    connect(zoom_in_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_in);
-    title_layout->addWidget(zoom_in_btn);
-    
-    auto* zoom_fit_btn = new QToolButton();
-    zoom_fit_btn->setText("Fit");
-    zoom_fit_btn->setToolTip("Fit to View");
-    connect(zoom_fit_btn, &QToolButton::clicked, this, &AdvancedFileTinderDialog::on_zoom_fit);
-    title_layout->addWidget(zoom_fit_btn);
-    
-    title_layout->addSpacing(20);
     
     switch_mode_btn_ = new QPushButton("Basic Mode");
     switch_mode_btn_->setStyleSheet(
@@ -189,8 +167,9 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     map_layout->addWidget(mind_map_view_);
     
     // Hint label
-    auto* hint = new QLabel("Click folder to assign file. Click [+] to add destination. Right-click for options.");
+    auto* hint = new QLabel("Click folder to assign file. [+] to add destination. Right-click for options. Keys: K=Keep, D/←=Delete, S/↓=Skip, N=New folder, 1-0=Quick Access");
     hint->setStyleSheet("color: #666; font-size: 10px;");
+    hint->setWordWrap(true);
     map_layout->addWidget(hint);
     
     static_cast<QVBoxLayout*>(layout())->addWidget(map_group, 1);
@@ -675,16 +654,6 @@ void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
         case Qt::Key_Up:
             on_back();
             break;
-        case Qt::Key_Plus:
-            if (event->modifiers() & Qt::ControlModifier) {
-                on_zoom_in();
-            }
-            break;
-        case Qt::Key_Minus:
-            if (event->modifiers() & Qt::ControlModifier) {
-                on_zoom_out();
-            }
-            break;
         case Qt::Key_N:
             prompt_add_folder();
             break;
@@ -745,21 +714,13 @@ void AdvancedFileTinderDialog::on_sort_changed() {
     }
 }
 
-void AdvancedFileTinderDialog::on_zoom_in() {
-    mind_map_view_->zoom_in();
-}
-
-void AdvancedFileTinderDialog::on_zoom_out() {
-    mind_map_view_->zoom_out();
-}
-
-void AdvancedFileTinderDialog::on_zoom_fit() {
-    mind_map_view_->zoom_fit();
-}
-
 void AdvancedFileTinderDialog::load_folder_tree() {
     if (folder_model_) {
+        // Block signals during bulk load to prevent O(N) refresh_layout() calls
+        // (each add_folder() emits folder_structure_changed → refresh_layout)
+        folder_model_->blockSignals(true);
         folder_model_->load_from_database(db_, source_folder_);
+        folder_model_->blockSignals(false);
     }
     if (mind_map_view_) {
         mind_map_view_->refresh_layout();

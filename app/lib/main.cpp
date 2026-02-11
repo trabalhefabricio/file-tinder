@@ -192,9 +192,10 @@ private:
         root_layout->addLayout(tools_row);
         
         // Hotkey hint
-        auto* hint_text = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | Z=Undo");
+        auto* hint_text = new QLabel("Keys: Left=Delete | Down=Skip | Up=Back | Z=Undo | Basic: Right=Keep | Advanced: K=Keep, 1-0=Quick Access");
         hint_text->setStyleSheet("color: #666666; font-size: 10px; padding-top: 8px;");
         hint_text->setAlignment(Qt::AlignCenter);
+        hint_text->setWordWrap(true);
         root_layout->addWidget(hint_text);
     }
     
@@ -233,7 +234,7 @@ private:
         auto* dlg = new StandaloneFileTinderDialog(chosen_path_, db_manager_, this);
         
         connect(dlg, &StandaloneFileTinderDialog::switch_to_advanced_mode, this, [this, dlg]() {
-            dlg->close();
+            dlg->done(QDialog::Accepted);
             launch_advanced();
         });
         
@@ -251,7 +252,7 @@ private:
         auto* dlg = new AdvancedFileTinderDialog(chosen_path_, db_manager_, this);
         
         connect(dlg, &AdvancedFileTinderDialog::switch_to_basic_mode, this, [this, dlg]() {
-            dlg->close();
+            dlg->done(QDialog::Accepted);
             launch_basic();
         });
         

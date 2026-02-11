@@ -29,7 +29,6 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QSlider>
-#include <QToolButton>
 #include <QPixmap>
 
 DiagnosticTool::DiagnosticTool(DatabaseManager& db, QWidget* parent)
@@ -1001,14 +1000,6 @@ DiagnosticTestResult DiagnosticTool::test_advanced_mode_ui() {
         issues << "No FilterWidget found";
     } else {
         verified << "FilterWidget";
-    }
-    
-    // Check zoom controls exist (QToolButton)
-    QList<QToolButton*> tool_buttons = dlg.findChildren<QToolButton*>();
-    if (tool_buttons.size() < 3) {
-        issues << QString("Expected 3 zoom buttons, found %1").arg(tool_buttons.size());
-    } else {
-        verified << "ZoomControls";
     }
     
     // Cleanup

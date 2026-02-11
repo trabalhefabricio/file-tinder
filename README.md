@@ -20,12 +20,10 @@ A swipe-style file organization tool with an intuitive "Tinder-like" interface f
 - **Session persistence**: Resume sorting sessions across application restarts
 
 ### Advanced Mode
-- **Visual Mind Map**: Large, clickable folder nodes displayed as a mind map
+- **Visual Mind Map**: Clickable folder nodes displayed as a scrollable tree
 - **One-click file assignment**: Click any folder node to instantly move the current file there
-- **Dynamic folder creation**: Create new or add existing folders on-the-fly via the "+" node
+- **Dynamic folder creation**: Create new or add existing folders on-the-fly via the "+" button
 - **Quick Access bar**: Pin up to 10 frequently used folders for one-click access (keys 1-0)
-- **Folder connections**: Group related folders visually
-- **Pan and zoom**: Navigate large folder structures with Ctrl+Scroll or middle-click drag
 - **Shared filtering & sorting**: Same filter/sort capabilities as Basic Mode
 - **Keep, Delete, Skip, Undo**: Full file action controls below the mind map
 
@@ -160,8 +158,6 @@ cmake --build . --config Release
 | K | Keep file |
 | Z | Undo last action |
 | N | Add new folder to mind map |
-| Ctrl+Scroll | Zoom in/out |
-| Middle-click drag | Pan view |
 
 ### Workflow
 

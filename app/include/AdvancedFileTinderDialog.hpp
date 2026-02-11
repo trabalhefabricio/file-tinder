@@ -90,11 +90,6 @@ private:
     
 signals:
     void switch_to_basic_mode();
-    
-private slots:
-    void on_zoom_in();
-    void on_zoom_out();
-    void on_zoom_fit();
 };
 
 #endif // ADVANCED_FILE_TINDER_DIALOG_HPP
