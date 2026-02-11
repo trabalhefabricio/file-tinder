@@ -529,8 +529,8 @@ DiagnosticTestResult DiagnosticTool::test_session_persistence() {
     timer.start();
     
     bool success = true;
-    QString test_folder = "/tmp/diag_session_test";
-    QString test_file = "/tmp/diag_session_test/test.txt";
+    QString test_folder = QDir::tempPath() + "/diag_session_test";
+    QString test_file = QDir::tempPath() + "/diag_session_test/test.txt";
     
     // Test save
     db_.save_file_decision(test_folder, test_file, "keep", "");
@@ -562,6 +562,11 @@ DiagnosticTestResult DiagnosticTool::test_session_persistence() {
     bool cleared = decisions.empty();
     
     success = found && updated && cleared;
+    
+    // Ensure cleanup even on test failure
+    if (!cleared) {
+        db_.clear_session(test_folder);
+    }
     
     result.duration_ms = static_cast<int>(timer.elapsed());
     result.passed = success;
