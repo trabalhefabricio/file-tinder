@@ -32,8 +32,12 @@ void FolderButton::update_display() {
     QString indent;
     for (int i = 0; i < depth_; ++i) indent += "    ";
     
-    QString icon = node_->exists ? "[D]" : "[+]";
-    if (node_->is_external) icon = "[E]";
+    QString icon;
+    if (node_->is_external) {
+        icon = node_->exists ? "[ED]" : "[E+]";
+    } else {
+        icon = node_->exists ? "[D]" : "[+]";
+    }
     QString count_str;
     if (node_->assigned_file_count > 0) {
         count_str = QString(" (%1)").arg(node_->assigned_file_count);

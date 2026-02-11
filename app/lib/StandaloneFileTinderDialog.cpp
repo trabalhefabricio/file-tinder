@@ -1171,9 +1171,9 @@ void StandaloneFileTinderDialog::show_review_summary() {
     );
     connect(execute_btn, &QPushButton::clicked, &summary_dialog, [&, table]() {
         // Apply any edits from combo boxes back to files_
-        for (int r = 0; r < table->rowCount(); ++r) {
+        for (int r = 0; r < table->rowCount() && r < static_cast<int>(row_to_file_idx.size()); ++r) {
             auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
-            if (!combo || r >= static_cast<int>(row_to_file_idx.size())) continue;
+            if (!combo) continue;
             
             int file_idx = row_to_file_idx[r];
             auto& file = files_[file_idx];
@@ -1182,11 +1182,12 @@ void StandaloneFileTinderDialog::show_review_summary() {
             if (new_decision != file.decision) {
                 // Update counts
                 update_decision_count(file.decision, -1);
-                if (new_decision == "pending") {
-                    // If reverting to pending, clear destination
-                    file.destination_folder.clear();
-                } else {
+                if (new_decision != "pending") {
                     update_decision_count(new_decision, 1);
+                }
+                if (new_decision == "pending" || new_decision != "move") {
+                    // Clear destination when not a move
+                    file.destination_folder.clear();
                 }
                 file.decision = new_decision;
             }
@@ -1225,8 +1226,10 @@ void StandaloneFileTinderDialog::execute_decisions() {
     }
     
     // Requirement 20: Verify we can create virtual folders before proceeding
+    QSet<QString> failed_folders;
     for (const QString& folder : plan.folders_to_create) {
         if (!QDir().mkpath(folder)) {
+            failed_folders.insert(folder);
             auto reply = QMessageBox::warning(this, "Folder Creation Failed",
                 QString("Could not create folder:\n%1\n\n"
                         "Files assigned to this folder will be skipped.\n"
@@ -1237,6 +1240,14 @@ void StandaloneFileTinderDialog::execute_decisions() {
     }
     // Clear the create list since we handled it above
     plan.folders_to_create.clear();
+    
+    // Remove moves targeting failed folders
+    if (!failed_folders.isEmpty()) {
+        plan.files_to_move.erase(
+            std::remove_if(plan.files_to_move.begin(), plan.files_to_move.end(),
+                [&](const auto& pair) { return failed_folders.contains(pair.second); }),
+            plan.files_to_move.end());
+    }
     
     // Progress dialog
     QProgressDialog progress("Executing decisions...", "Cancel", 0, 100, this);
