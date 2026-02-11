@@ -653,7 +653,7 @@ void StandaloneFileTinderDialog::update_stats() {
     
     // Only show Move count if there are moves (relevant in Advanced Mode)
     if (move_count_ > 0) {
-        stats += QString("  |  <span style='color: %1;'>Move: %2</span>")
+        stats += QString("  |  <span style='color: %1;'>📁 Move: %2</span>")
             .arg(ui::colors::kMoveColor).arg(move_count_);
     }
     
