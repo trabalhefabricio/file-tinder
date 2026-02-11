@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QScreen>
 #include <QKeyEvent>
 #include <QCloseEvent>
 #include <QResizeEvent>
@@ -71,9 +72,8 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     
     setWindowTitle("File Tinder - Basic Mode");
     
-    // DPI-aware minimum size
-    setMinimumSize(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth),
-                   ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinHeight));
+    // Set minimum width only — height adapts to screen
+    setMinimumWidth(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth));
     
     // Setup resize timer for debouncing preview updates
     resize_timer_ = new QTimer(this);
@@ -105,6 +105,14 @@ void StandaloneFileTinderDialog::initialize() {
     
     // Save this folder as last used
     save_last_folder();
+    
+    // Size window to fit within the available screen area
+    if (auto* screen = QApplication::primaryScreen()) {
+        QRect avail = screen->availableGeometry();
+        int w = qMin(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth), avail.width() * 9 / 10);
+        int h = qMin(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinHeight), avail.height() * 8 / 10);
+        resize(w, h);
+    }
 }
 
 void StandaloneFileTinderDialog::save_last_folder() {
@@ -1234,10 +1242,8 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
 }
 
 void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
-    // Route all close requests through reject() which handles save logic
-    // and properly terminates the exec() event loop.
-    event->ignore();
-    reject();
+    // Let QDialog handle it — QDialog::closeEvent() calls reject() for us
+    QDialog::closeEvent(event);
 }
 
 void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
@@ -1251,14 +1257,18 @@ void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
 }
 
 void StandaloneFileTinderDialog::reject() {
-    // Guard against re-entrant calls
-    if (closing_) return;
-    closing_ = true;
+    // Guard against re-entrant calls (QMessageBox can trigger events)
+    if (closing_) {
+        QDialog::reject();
+        return;
+    }
     
     // Check if there are any pending decisions to save
     int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
     
     if (reviewed > 0 && !files_.empty()) {
+        closing_ = true;  // Prevent re-entry from message box events
+        
         QMessageBox::StandardButton reply = QMessageBox::question(
             this, 
             "Save Progress?",
@@ -1271,18 +1281,18 @@ void StandaloneFileTinderDialog::reject() {
         
         if (reply == QMessageBox::Save) {
             save_session_state();
-        } else if (reply == QMessageBox::Cancel) {
+            QDialog::reject();
+        } else if (reply == QMessageBox::Discard) {
+            QDialog::reject();
+        } else {
+            // Cancel — don't close
             closing_ = false;
-            return;  // Don't close
         }
-        // Discard: fall through to close without saving
     } else {
         // No decisions made, just save state and close
         save_session_state();
+        QDialog::reject();
     }
-    
-    // Properly terminate the exec() event loop
-    QDialog::reject();
 }
 
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {

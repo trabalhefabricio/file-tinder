@@ -18,6 +18,7 @@
 #include <QDir>
 #include <QMimeDatabase>
 #include <QSettings>
+#include <QScreen>
 
 AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
                                                    DatabaseManager& db,
@@ -36,14 +37,21 @@ AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
     , folder_model_(nullptr) {
     
     setWindowTitle("File Tinder - Advanced Mode");
-    setMinimumSize(ui::scaling::scaled(ui::dimensions::kAdvancedFileTinderMinWidth),
-                   ui::scaling::scaled(ui::dimensions::kAdvancedFileTinderMinHeight));
+    setMinimumWidth(ui::scaling::scaled(ui::dimensions::kAdvancedFileTinderMinWidth));
 }
 
 AdvancedFileTinderDialog::~AdvancedFileTinderDialog() = default;
 
 void AdvancedFileTinderDialog::initialize() {
     StandaloneFileTinderDialog::initialize();
+    
+    // Override the base class sizing for advanced mode (needs more width)
+    if (auto* screen = QApplication::primaryScreen()) {
+        QRect avail = screen->availableGeometry();
+        int w = qMin(ui::scaling::scaled(ui::dimensions::kAdvancedFileTinderMinWidth), avail.width() * 9 / 10);
+        int h = qMin(ui::scaling::scaled(ui::dimensions::kAdvancedFileTinderMinHeight), avail.height() * 8 / 10);
+        resize(w, h);
+    }
 }
 
 void AdvancedFileTinderDialog::setup_ui() {
@@ -572,9 +580,8 @@ void AdvancedFileTinderDialog::show_current_file() {
 }
 
 void AdvancedFileTinderDialog::closeEvent(QCloseEvent* event) {
-    // Route through reject() like base class
-    event->ignore();
-    reject();
+    // Let QDialog handle it — QDialog::closeEvent() calls reject()
+    QDialog::closeEvent(event);
 }
 
 void AdvancedFileTinderDialog::reject() {

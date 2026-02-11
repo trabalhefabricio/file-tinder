@@ -231,13 +231,16 @@ private:
         LOG_INFO("Launcher", "Starting basic mode");
         
         auto* dlg = new StandaloneFileTinderDialog(chosen_path_, db_manager_, this);
-        dlg->initialize();
         
         connect(dlg, &StandaloneFileTinderDialog::switch_to_advanced_mode, this, [this, dlg]() {
             dlg->close();
             launch_advanced();
         });
         
+        // Show the dialog first, then initialize (so UI appears immediately)
+        dlg->show();
+        QApplication::processEvents();
+        dlg->initialize();
         dlg->exec();
         dlg->deleteLater();
     }
@@ -248,13 +251,16 @@ private:
         LOG_INFO("Launcher", "Starting advanced mode");
         
         auto* dlg = new AdvancedFileTinderDialog(chosen_path_, db_manager_, this);
-        dlg->initialize();
         
         connect(dlg, &AdvancedFileTinderDialog::switch_to_basic_mode, this, [this, dlg]() {
             dlg->close();
             launch_basic();
         });
         
+        // Show the dialog first, then initialize (so UI appears immediately)
+        dlg->show();
+        QApplication::processEvents();
+        dlg->initialize();
         dlg->exec();
         dlg->deleteLater();
     }
