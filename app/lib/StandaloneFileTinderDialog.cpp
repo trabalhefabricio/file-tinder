@@ -642,15 +642,22 @@ void StandaloneFileTinderDialog::update_progress() {
 
 void StandaloneFileTinderDialog::update_stats() {
     if (!stats_label_) return;
-    stats_label_->setText(QString(
+    
+    QString stats = QString(
         "<span style='color: %1;'>✓ Keep: %2</span>  |  "
         "<span style='color: %3;'>✗ Delete: %4</span>  |  "
-        "<span style='color: %5;'>↓ Skip: %6</span>  |  "
-        "<span style='color: %7;'>📁 Move: %8</span>"
+        "<span style='color: %5;'>↓ Skip: %6</span>"
     ).arg(ui::colors::kKeepColor).arg(keep_count_)
      .arg(ui::colors::kDeleteColor).arg(delete_count_)
-     .arg(ui::colors::kSkipColor).arg(skip_count_)
-     .arg(ui::colors::kMoveColor).arg(move_count_));
+     .arg(ui::colors::kSkipColor).arg(skip_count_);
+    
+    // Only show Move count if there are moves (relevant in Advanced Mode)
+    if (move_count_ > 0) {
+        stats += QString("  |  <span style='color: %1;'>Move: %2</span>")
+            .arg(ui::colors::kMoveColor).arg(move_count_);
+    }
+    
+    stats_label_->setText(stats);
 }
 
 // Helper to update decision counts (deduplication of count logic)

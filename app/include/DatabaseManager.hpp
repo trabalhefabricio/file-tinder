@@ -67,6 +67,7 @@ public:
 private:
     QSqlDatabase db_;
     QString db_path_;
+    QString connection_name_;
     
     bool create_tables();
     bool execute_query(const QString& query);

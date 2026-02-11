@@ -622,9 +622,10 @@ void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
         }
     }
     
-    // Arrow keys same as Basic Mode
+    // Arrow keys and letter shortcuts
     switch (event->key()) {
         case Qt::Key_Left:
+        case Qt::Key_D:
             on_delete();
             break;
         case Qt::Key_Right:
@@ -637,6 +638,7 @@ void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
             on_undo();
             break;
         case Qt::Key_Down:
+        case Qt::Key_S:
             on_skip();
             break;
         case Qt::Key_Up:

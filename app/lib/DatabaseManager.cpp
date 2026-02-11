@@ -7,7 +7,8 @@
 #include <QDebug>
 
 DatabaseManager::DatabaseManager(const QString& db_path)
-    : db_path_(db_path) {
+    : db_path_(db_path)
+    , connection_name_("FileTinderDB_" + QString::number(reinterpret_cast<quintptr>(this))) {
     if (db_path_.isEmpty()) {
         QString data_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         QDir().mkpath(data_dir);
@@ -19,10 +20,11 @@ DatabaseManager::~DatabaseManager() {
     if (db_.isOpen()) {
         db_.close();
     }
+    QSqlDatabase::removeDatabase(connection_name_);
 }
 
 bool DatabaseManager::initialize() {
-    db_ = QSqlDatabase::addDatabase("QSQLITE");
+    db_ = QSqlDatabase::addDatabase("QSQLITE", connection_name_);
     db_.setDatabaseName(db_path_);
     
     if (!db_.open()) {
