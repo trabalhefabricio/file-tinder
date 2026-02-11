@@ -36,8 +36,8 @@ AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
     , folder_model_(nullptr) {
     
     setWindowTitle("File Tinder - Advanced Mode");
-    setMinimumSize(ui::dimensions::kAdvancedFileTinderMinWidth,
-                   ui::dimensions::kAdvancedFileTinderMinHeight);
+    setMinimumSize(ui::scaling::scaled(ui::dimensions::kAdvancedFileTinderMinWidth),
+                   ui::scaling::scaled(ui::dimensions::kAdvancedFileTinderMinHeight));
 }
 
 AdvancedFileTinderDialog::~AdvancedFileTinderDialog() = default;
@@ -269,8 +269,10 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     auto* action_layout = new QHBoxLayout(action_widget);
     action_layout->setSpacing(8);
     
+    int btn_h = ui::scaling::scaled(ui::dimensions::kThinButtonHeight);
+    
     delete_btn_ = new QPushButton("Delete [<-]");
-    delete_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    delete_btn_->setMinimumHeight(btn_h);
     delete_btn_->setStyleSheet(QString(
         "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
         "QPushButton:hover { background-color: #c0392b; }"
@@ -279,7 +281,7 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     action_layout->addWidget(delete_btn_, 1);
     
     keep_btn_ = new QPushButton("Keep [K]");
-    keep_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    keep_btn_->setMinimumHeight(btn_h);
     keep_btn_->setStyleSheet(QString(
         "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
         "QPushButton:hover { background-color: #27ae60; }"
@@ -288,7 +290,7 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     action_layout->addWidget(keep_btn_, 1);
     
     skip_btn_ = new QPushButton("Skip [Down]");
-    skip_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    skip_btn_->setMinimumHeight(btn_h);
     skip_btn_->setStyleSheet(QString(
         "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
         "QPushButton:hover { background-color: #e67e22; }"
@@ -297,7 +299,7 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     action_layout->addWidget(skip_btn_, 1);
     
     back_btn_ = new QPushButton("Back [Up]");
-    back_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    back_btn_->setMinimumHeight(btn_h);
     back_btn_->setStyleSheet(
         "QPushButton { background-color: #95a5a6; color: white; font-weight: bold; border-radius: 4px; }"
         "QPushButton:hover { background-color: #7f8c8d; }"
@@ -306,7 +308,7 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     action_layout->addWidget(back_btn_, 1);
     
     undo_btn_ = new QPushButton("Undo [Z]");
-    undo_btn_->setMinimumHeight(ui::dimensions::kThinButtonHeight);
+    undo_btn_->setMinimumHeight(btn_h);
     undo_btn_->setStyleSheet(
         "QPushButton { background-color: #9b59b6; color: white; font-weight: bold; border-radius: 4px; }"
         "QPushButton:hover { background-color: #8e44ad; }"

@@ -202,6 +202,7 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;  // New: handle resize
+    void reject() override;  // Override to route Escape/close through save logic
     
 signals:
     void session_completed();

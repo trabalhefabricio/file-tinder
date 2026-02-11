@@ -25,7 +25,7 @@ DiagnosticTool::DiagnosticTool(DatabaseManager& db, QWidget* parent)
     : QDialog(parent)
     , db_(db) {
     setWindowTitle("File Tinder - Diagnostic Tool");
-    setMinimumSize(700, 500);
+    setMinimumSize(ui::scaling::scaled(700), ui::scaling::scaled(500));
     setup_ui();
     
     LOG_INFO("Diagnostics", "Diagnostic tool opened");
@@ -503,7 +503,7 @@ void DiagnosticTool::show_log_viewer() {
     
     QDialog* log_dialog = new QDialog(this);
     log_dialog->setWindowTitle("Application Logs");
-    log_dialog->setMinimumSize(800, 500);
+    log_dialog->setMinimumSize(ui::scaling::scaled(800), ui::scaling::scaled(500));
     
     auto* layout = new QVBoxLayout(log_dialog);
     

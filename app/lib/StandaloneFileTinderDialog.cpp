@@ -70,8 +70,14 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , resize_timer_(nullptr) {
     
     setWindowTitle("File Tinder - Basic Mode");
-    setMinimumSize(ui::dimensions::kStandaloneFileTinderMinWidth,
-                   ui::dimensions::kStandaloneFileTinderMinHeight);
+    
+    // Enable proper window controls (close, minimize, maximize)
+    setWindowFlags(Qt::Window | Qt::WindowCloseButtonHint | 
+                   Qt::WindowMinMaxButtonsHint);
+    
+    // DPI-aware minimum size
+    setMinimumSize(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth),
+                   ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinHeight));
     
     // Allow resizing
     setSizeGripEnabled(true);
@@ -138,7 +144,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Mode switch in upper right corner
     switch_mode_btn_ = new QPushButton("Advanced Mode");
-    switch_mode_btn_->setFixedSize(130, 32);
+    switch_mode_btn_->setFixedSize(ui::scaling::scaled(130), ui::scaling::scaled(32));
     switch_mode_btn_->setStyleSheet(
         "QPushButton { font-size: 11px; padding: 5px 10px; "
         "background-color: #9b59b6; border-radius: 4px; color: white; }"
@@ -149,7 +155,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Help button
     help_btn_ = new QPushButton("?");
-    help_btn_->setFixedSize(32, 32);
+    help_btn_->setFixedSize(ui::scaling::scaled(32), ui::scaling::scaled(32));
     help_btn_->setToolTip("Keyboard Shortcuts");
     help_btn_->setStyleSheet(
         "QPushButton { font-size: 14px; font-weight: bold; background-color: #34495e; "
@@ -220,7 +226,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Sort order toggle button
     sort_order_btn_ = new QPushButton("Asc");
-    sort_order_btn_->setFixedSize(50, 28);
+    sort_order_btn_->setFixedSize(ui::scaling::scaled(50), ui::scaling::scaled(28));
     sort_order_btn_->setStyleSheet(
         "QPushButton { padding: 4px; background-color: #34495e; "
         "border-radius: 4px; color: white; font-size: 11px; }"
@@ -247,7 +253,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Preview label (for images/text)
     preview_label_ = new QLabel();
-    preview_label_->setMinimumSize(300, 200);
+    preview_label_->setMinimumSize(ui::scaling::scaled(300), ui::scaling::scaled(200));
     preview_label_->setAlignment(Qt::AlignCenter);
     preview_label_->setWordWrap(true);
     preview_layout->addWidget(preview_label_, 1);
@@ -269,7 +275,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     progress_bar_ = new QProgressBar();
     progress_bar_->setTextVisible(true);
-    progress_bar_->setFixedHeight(20);
+    progress_bar_->setFixedHeight(ui::scaling::scaled(20));
     progress_bar_->setStyleSheet(
         "QProgressBar { border: 1px solid #34495e; border-radius: 4px; text-align: center; background: #2c3e50; }"
         "QProgressBar::chunk { background-color: #3498db; }"
@@ -304,7 +310,8 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_btn_row->setSpacing(20);
     
     delete_btn_ = new QPushButton("DELETE\n[Left]");
-    delete_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, ui::dimensions::kMainButtonHeight);
+    delete_btn_->setMinimumSize(ui::scaling::scaled(ui::dimensions::kMainButtonWidth),
+                                ui::scaling::scaled(ui::dimensions::kMainButtonHeight));
     delete_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     delete_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 18px; font-weight: bold; "
@@ -315,7 +322,8 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_btn_row->addWidget(delete_btn_);
     
     keep_btn_ = new QPushButton("KEEP\n[Right]");
-    keep_btn_->setMinimumSize(ui::dimensions::kMainButtonWidth, ui::dimensions::kMainButtonHeight);
+    keep_btn_->setMinimumSize(ui::scaling::scaled(ui::dimensions::kMainButtonWidth),
+                              ui::scaling::scaled(ui::dimensions::kMainButtonHeight));
     keep_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     keep_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 18px; font-weight: bold; "
@@ -332,7 +340,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     nav_btn_row->setSpacing(20);
     
     back_btn_ = new QPushButton("Back [Up]");
-    back_btn_->setFixedHeight(40);
+    back_btn_->setFixedHeight(ui::scaling::scaled(40));
     back_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     back_btn_->setStyleSheet(
         "QPushButton { font-size: 12px; font-weight: bold; "
@@ -343,7 +351,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     nav_btn_row->addWidget(back_btn_);
     
     skip_btn_ = new QPushButton("Skip [Down]");
-    skip_btn_->setFixedHeight(40);
+    skip_btn_->setFixedHeight(ui::scaling::scaled(40));
     skip_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     skip_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; font-weight: bold; "
@@ -365,7 +373,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Undo button (replaces Move to Folder in Basic Mode)
     undo_btn_ = new QPushButton("Undo [Z]");
-    undo_btn_->setFixedHeight(36);
+    undo_btn_->setFixedHeight(ui::scaling::scaled(36));
     undo_btn_->setStyleSheet(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: #9b59b6; border-radius: 4px; color: white; }"
@@ -378,7 +386,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     // Preview button (for opening images in separate window)
     preview_btn_ = new QPushButton("Preview [P]");
-    preview_btn_->setFixedHeight(36);
+    preview_btn_->setFixedHeight(ui::scaling::scaled(36));
     preview_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: %1; border-radius: 4px; color: white; }"
@@ -390,7 +398,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     bottom_layout->addStretch();
     
     finish_btn_ = new QPushButton("Finish Review");
-    finish_btn_->setFixedHeight(36);
+    finish_btn_->setFixedHeight(ui::scaling::scaled(36));
     finish_btn_->setStyleSheet(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: #1abc9c; border-radius: 4px; color: white; }"
@@ -950,7 +958,7 @@ QString StandaloneFileTinderDialog::show_folder_picker() {
     // Show dialog with recent folders and browse option
     QDialog dialog(this);
     dialog.setWindowTitle("Select Destination Folder");
-    dialog.setMinimumSize(400, 300);
+    dialog.setMinimumSize(ui::scaling::scaled(400), ui::scaling::scaled(300));
     
     auto* layout = new QVBoxLayout(&dialog);
     
@@ -1021,7 +1029,7 @@ QString StandaloneFileTinderDialog::show_folder_picker() {
 void StandaloneFileTinderDialog::show_review_summary() {
     QDialog summary_dialog(this);
     summary_dialog.setWindowTitle("Review Summary");
-    summary_dialog.setMinimumSize(700, 500);
+    summary_dialog.setMinimumSize(ui::scaling::scaled(700), ui::scaling::scaled(500));
     
     auto* layout = new QVBoxLayout(&summary_dialog);
     
@@ -1263,6 +1271,11 @@ void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
         save_session_state();
         event->accept();
     }
+    
+    // Ensure exec() event loop terminates after close is accepted
+    if (event->isAccepted()) {
+        QDialog::done(QDialog::Rejected);
+    }
 }
 
 void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
@@ -1273,6 +1286,12 @@ void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
     if (resize_timer_) {
         resize_timer_->start();  // Restart the timer on each resize event
     }
+}
+
+void StandaloneFileTinderDialog::reject() {
+    // Override reject() so that Escape key and window close button both
+    // go through the same save-progress logic as closeEvent.
+    close();
 }
 
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {

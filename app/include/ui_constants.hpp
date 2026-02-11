@@ -1,7 +1,27 @@
 #ifndef UI_CONSTANTS_HPP
 #define UI_CONSTANTS_HPP
 
+#include <QApplication>
+#include <QScreen>
+
+namespace ui::scaling {
+    // Returns scale factor relative to 96 DPI baseline.
+    // e.g. 1.0 at 96 DPI, 1.5 at 144 DPI, 2.0 at 192 DPI
+    inline double factor() {
+        if (auto* screen = QApplication::primaryScreen()) {
+            return screen->logicalDotsPerInch() / 96.0;
+        }
+        return 1.0;
+    }
+    
+    // Scale a pixel value by the DPI factor
+    inline int scaled(int base_value) {
+        return static_cast<int>(base_value * factor());
+    }
+}
+
 namespace ui::dimensions {
+    // Base values at 96 DPI (1x scale)
     // Standalone File Tinder (Basic Mode)
     constexpr int kStandaloneFileTinderMinWidth = 700;
     constexpr int kStandaloneFileTinderMinHeight = 550;

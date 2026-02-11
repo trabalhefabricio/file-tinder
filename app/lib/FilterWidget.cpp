@@ -3,6 +3,7 @@
 
 #include "FilterWidget.hpp"
 #include "StandaloneFileTinderDialog.hpp"  // For FileFilterType and SortOrder enums
+#include "ui_constants.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGroupBox>
@@ -16,7 +17,7 @@ CustomExtensionDialog::CustomExtensionDialog(QWidget* parent)
     : QDialog(parent)
 {
     setWindowTitle("Specify Extensions");
-    setMinimumSize(300, 250);
+    setMinimumSize(ui::scaling::scaled(300), ui::scaling::scaled(250));
 
     auto* layout = new QVBoxLayout(this);
 

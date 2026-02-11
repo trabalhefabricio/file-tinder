@@ -2,6 +2,7 @@
 // Popup window for viewing images separately
 
 #include "ImagePreviewWindow.hpp"
+#include "ui_constants.hpp"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -53,23 +54,23 @@ void ImagePreviewWindow::setup_ui() {
     
     // Zoom controls
     zoom_out_btn_ = new QPushButton("-");
-    zoom_out_btn_->setFixedWidth(30);
+    zoom_out_btn_->setFixedWidth(ui::scaling::scaled(30));
     zoom_out_btn_->setToolTip("Zoom out");
     toolbar->addWidget(zoom_out_btn_);
     
     zoom_slider_ = new QSlider(Qt::Horizontal);
     zoom_slider_->setRange(10, 500);  // 10% to 500%
     zoom_slider_->setValue(100);
-    zoom_slider_->setFixedWidth(150);
+    zoom_slider_->setFixedWidth(ui::scaling::scaled(150));
     toolbar->addWidget(zoom_slider_);
     
     zoom_in_btn_ = new QPushButton("+");
-    zoom_in_btn_->setFixedWidth(30);
+    zoom_in_btn_->setFixedWidth(ui::scaling::scaled(30));
     zoom_in_btn_->setToolTip("Zoom in");
     toolbar->addWidget(zoom_in_btn_);
     
     zoom_label_ = new QLabel("100%");
-    zoom_label_->setFixedWidth(50);
+    zoom_label_->setFixedWidth(ui::scaling::scaled(50));
     toolbar->addWidget(zoom_label_);
     
     toolbar->addSpacing(10);

@@ -19,6 +19,7 @@
 #include "AdvancedFileTinderDialog.hpp"
 #include "AppLogger.hpp"
 #include "DiagnosticTool.hpp"
+#include "ui_constants.hpp"
 
 class FileTinderLauncher : public QDialog {
     Q_OBJECT
@@ -30,7 +31,7 @@ public:
         , chosen_path_() {
         
         setWindowTitle("File Tinder Launcher");
-        setMinimumSize(550, 450);
+        setMinimumSize(ui::scaling::scaled(550), ui::scaling::scaled(450));
         
         LOG_INFO("Launcher", "Application starting");
         
@@ -148,7 +149,7 @@ private:
         modes_row->setSpacing(12);
         
         auto* basic_mode_btn = new QPushButton("Basic Mode\n(Simple sorting)");
-        basic_mode_btn->setMinimumSize(180, 70);
+        basic_mode_btn->setMinimumSize(ui::scaling::scaled(180), ui::scaling::scaled(70));
         basic_mode_btn->setStyleSheet(
             "QPushButton { padding: 12px; background-color: #107c10; color: white; border: none; font-size: 13px; }"
             "QPushButton:hover { background-color: #0e6b0e; }"
@@ -157,7 +158,7 @@ private:
         modes_row->addWidget(basic_mode_btn);
         
         auto* adv_mode_btn = new QPushButton("Advanced Mode\n(Folder tree view)");
-        adv_mode_btn->setMinimumSize(180, 70);
+        adv_mode_btn->setMinimumSize(ui::scaling::scaled(180), ui::scaling::scaled(70));
         adv_mode_btn->setStyleSheet(
             "QPushButton { padding: 12px; background-color: #5c2d91; color: white; border: none; font-size: 13px; }"
             "QPushButton:hover { background-color: #4a2473; }"
