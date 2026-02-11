@@ -1371,6 +1371,8 @@ void StandaloneFileTinderDialog::show_execution_results(const ExecutionResult& r
             QString dest_display;
             if (!entry.dest_path.isEmpty()) {
                 dest_display = entry.action == "delete" ? "(trash)" : QFileInfo(entry.dest_path).fileName();
+            } else if (entry.action == "delete") {
+                dest_display = "(permanent)";
             }
             auto* dest_item = new QTableWidgetItem(dest_display);
             dest_item->setFlags(dest_item->flags() & ~Qt::ItemIsEditable);
@@ -1383,7 +1385,13 @@ void StandaloneFileTinderDialog::show_execution_results(const ExecutionResult& r
                 "QPushButton:hover { background-color: #d35400; }"
                 "QPushButton:disabled { background-color: #7f8c8d; color: #bdc3c7; }"
             );
-            connect(undo_btn, &QPushButton::clicked, this, [this, entry, undo_btn, action_item, i, table]() {
+            // Disable undo for permanently deleted files (no trash path)
+            if (entry.action == "delete" && entry.dest_path.isEmpty()) {
+                undo_btn->setEnabled(false);
+                undo_btn->setText("Permanent");
+                undo_btn->setToolTip("File was permanently deleted — cannot undo");
+            }
+            connect(undo_btn, &QPushButton::clicked, this, [this, entry, undo_btn, action_item]() {
                 if (FileTinderExecutor::undo_action(entry)) {
                     undo_btn->setEnabled(false);
                     undo_btn->setText("Done ✓");

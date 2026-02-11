@@ -340,7 +340,12 @@ private:
             file_item->setToolTip(src);
             table->setItem(i, 1, file_item);
             
-            QString dest_display = action == "delete" ? "(trash)" : QFileInfo(dst).fileName();
+            QString dest_display;
+            if (action == "delete") {
+                dest_display = dst.isEmpty() ? "(permanent)" : "(trash)";
+            } else {
+                dest_display = QFileInfo(dst).fileName();
+            }
             auto* dest_item = new QTableWidgetItem(dest_display);
             dest_item->setFlags(dest_item->flags() & ~Qt::ItemIsEditable);
             dest_item->setToolTip(dst);
@@ -356,6 +361,12 @@ private:
                 "QPushButton:hover { background-color: #d35400; }"
                 "QPushButton:disabled { background-color: #7f8c8d; color: #bdc3c7; }"
             );
+            // Disable undo for permanently deleted files (no trash path)
+            if (action == "delete" && dst.isEmpty()) {
+                undo_btn->setEnabled(false);
+                undo_btn->setText("Permanent");
+                undo_btn->setToolTip("File was permanently deleted — cannot undo");
+            }
             connect(undo_btn, &QPushButton::clicked, this, [this, id, action, src, dst, undo_btn, action_item]() {
                 ExecutionLogEntry entry;
                 entry.action = action;
