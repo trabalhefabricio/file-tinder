@@ -355,6 +355,7 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     auto& file = files_[file_idx];
     
     QString old_decision = file.decision;
+    QString old_dest_folder = file.destination_folder;
     
     // Update counts
     if (file.decision != "pending") {
@@ -368,8 +369,8 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     file.destination_folder = folder_path;
     move_count_++;
     
-    // Record for undo
-    record_action(file_idx, old_decision, "move", folder_path);
+    // Record for undo (store the OLD destination so it can be restored)
+    record_action(file_idx, old_decision, "move", old_dest_folder);
     
     if (folder_model_) folder_model_->assign_file_to_folder(folder_path);
     if (mind_map_view_) mind_map_view_->set_selected_folder(folder_path);

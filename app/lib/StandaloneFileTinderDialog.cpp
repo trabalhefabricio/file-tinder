@@ -670,12 +670,12 @@ int StandaloneFileTinderDialog::get_current_file_index() const {
 }
 
 void StandaloneFileTinderDialog::record_action(int file_index, const QString& old_decision, 
-                                               const QString& new_decision, const QString& dest_folder) {
+                                               const QString& new_decision, const QString& old_dest_folder) {
     ActionRecord record;
     record.file_index = file_index;
     record.previous_decision = old_decision;
     record.new_decision = new_decision;
-    record.destination_folder = dest_folder;
+    record.destination_folder = old_dest_folder;  // Store old destination for undo restore
     undo_stack_.push_back(record);
     
     // Enable undo button
@@ -683,10 +683,10 @@ void StandaloneFileTinderDialog::record_action(int file_index, const QString& ol
         undo_btn_->setEnabled(true);
     }
     
-    // Save this decision to DB immediately (crash safety)
+    // Save the NEW decision to DB immediately (crash safety)
     if (file_index >= 0 && file_index < static_cast<int>(files_.size())) {
         const auto& file = files_[file_index];
-        db_.save_file_decision(source_folder_, file.path, new_decision, dest_folder);
+        db_.save_file_decision(source_folder_, file.path, file.decision, file.destination_folder);
     }
 }
 
