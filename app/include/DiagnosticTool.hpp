@@ -39,7 +39,7 @@ private:
     void append_output(const QString& text, const QString& color = "white");
     void report_result(const DiagnosticTestResult& result);
     
-    // Individual tests
+    // Individual tests - System
     DiagnosticTestResult test_database_connection();
     DiagnosticTestResult test_database_operations();
     DiagnosticTestResult test_file_operations();
@@ -49,6 +49,12 @@ private:
     DiagnosticTestResult test_memory_usage();
     DiagnosticTestResult test_screen_info();
     DiagnosticTestResult test_qt_version();
+    
+    // Individual tests - Feature verification
+    DiagnosticTestResult test_session_persistence();
+    DiagnosticTestResult test_filter_sort();
+    DiagnosticTestResult test_folder_tree_model();
+    DiagnosticTestResult test_keyboard_shortcuts();
     
     DatabaseManager& db_;
     QTextEdit* output_display_;
