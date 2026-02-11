@@ -7,11 +7,17 @@
 namespace ui::scaling {
     // Returns scale factor relative to 96 DPI baseline.
     // e.g. 1.0 at 96 DPI, 1.5 at 144 DPI, 2.0 at 192 DPI
+    // Cached after first call for performance.
     inline double factor() {
-        if (auto* screen = QApplication::primaryScreen()) {
-            return screen->logicalDotsPerInch() / 96.0;
+        static double cached = -1.0;
+        if (cached < 0.0) {
+            if (auto* screen = QApplication::primaryScreen()) {
+                cached = screen->logicalDotsPerInch() / 96.0;
+            } else {
+                cached = 1.0;
+            }
         }
-        return 1.0;
+        return cached;
     }
     
     // Scale a pixel value by the DPI factor
