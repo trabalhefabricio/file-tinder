@@ -15,13 +15,14 @@ struct FolderNode {
     bool exists;                      // Existing folder vs. to-be-created
     bool is_pinned;                   // Pinned to quick access
     bool is_connected;                // Part of a connection group
+    bool is_external;                 // Folder outside the source folder
     int connection_group_id;          // Connection group ID
     int assigned_file_count;
     FolderNode* parent;
     std::vector<std::unique_ptr<FolderNode>> children;
     
     FolderNode() : exists(true), is_pinned(false), is_connected(false), 
-                   connection_group_id(-1), assigned_file_count(0), parent(nullptr) {}
+                   is_external(false), connection_group_id(-1), assigned_file_count(0), parent(nullptr) {}
 };
 
 class FolderTreeModel : public QAbstractItemModel {
@@ -34,6 +35,7 @@ public:
         ExistsRole,
         IsPinnedRole,
         IsConnectedRole,
+        IsExternalRole,
         ConnectionGroupRole,
         FileCountRole
     };

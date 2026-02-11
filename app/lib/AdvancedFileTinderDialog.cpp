@@ -120,6 +120,22 @@ void AdvancedFileTinderDialog::setup_ui() {
     load_folder_tree();
     load_quick_access();
     
+    // Requirement 2: Detect missing folders (deleted from disk between sessions)
+    check_missing_folders();
+    
+    // Requirement 1: First-time onboarding prompt
+    if (folder_model_ && folder_model_->root_node() && 
+        folder_model_->root_node()->children.empty()) {
+        QMessageBox::information(this, "Welcome to Advanced Mode",
+            "Welcome to Advanced Mode!\n\n"
+            "• Click the [+ Add Folder] button to add destination folders\n"
+            "• Click any folder to assign the current file to it\n"
+            "• Use keys 1-0 for Quick Access slots\n"
+            "• Right-click folders for more options\n\n"
+            "Tip: You can add folders outside the source directory — "
+            "they'll be shown in purple.");
+    }
+    
     // Initialize display
     if (!files_.empty()) {
         show_current_file();
@@ -345,6 +361,12 @@ void AdvancedFileTinderDialog::on_folder_clicked(const QString& folder_path) {
     int file_idx = get_current_file_index();
     if (file_idx < 0) return;
     
+    // Requirement 8: Clicking root folder = Keep in place
+    if (folder_path == source_folder_) {
+        on_keep();
+        return;
+    }
+    
     auto& file = files_[file_idx];
     
     QString old_decision = file.decision;
@@ -384,6 +406,12 @@ void AdvancedFileTinderDialog::prompt_add_folder() {
             "Enter folder name:", QLineEdit::Normal, "", &ok);
         if (ok && !name.isEmpty()) {
             QString new_path = source_folder_ + "/" + name;
+            // Requirement 5: Duplicate folder prompt
+            if (folder_model_ && folder_model_->find_node(new_path)) {
+                QMessageBox::information(this, "Already Added",
+                    QString("The folder '%1' is already in the tree.").arg(name));
+                return;
+            }
             if (folder_model_) folder_model_->add_folder(new_path, true);  // Virtual folder
             if (mind_map_view_) mind_map_view_->refresh_layout();
         }
@@ -392,6 +420,22 @@ void AdvancedFileTinderDialog::prompt_add_folder() {
     menu.addAction("Add Existing Folder...", [this]() {
         QString folder = QFileDialog::getExistingDirectory(this, "Select Folder", source_folder_);
         if (!folder.isEmpty()) {
+            // Requirement 5: Duplicate folder prompt
+            if (folder_model_ && folder_model_->find_node(folder)) {
+                QMessageBox::information(this, "Already Added",
+                    QString("This folder is already in the tree:\n%1").arg(folder));
+                return;
+            }
+            // Requirement 4: Warn about external folders
+            bool is_external = !folder.startsWith(source_folder_);
+            if (is_external) {
+                auto reply = QMessageBox::question(this, "External Folder",
+                    QString("This folder is outside the source directory:\n%1\n\n"
+                            "Files moved here will leave the original folder's location. Continue?")
+                        .arg(folder),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                if (reply != QMessageBox::Yes) return;
+            }
             if (folder_model_) folder_model_->add_folder(folder, false);  // Existing folder
             if (mind_map_view_) mind_map_view_->refresh_layout();
         }
@@ -403,11 +447,13 @@ void AdvancedFileTinderDialog::prompt_add_folder() {
 void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path, const QPoint& pos) {
     QMenu menu;
     
-    menu.addAction("Move File Here", [this, folder_path]() {
-        on_folder_clicked(folder_path);
-    });
-    
-    menu.addSeparator();
+    // Don't offer "Move File Here" for root (Req 8 — root = keep)
+    if (folder_path != source_folder_) {
+        menu.addAction("Move File Here", [this, folder_path]() {
+            on_folder_clicked(folder_path);
+        });
+        menu.addSeparator();
+    }
     
     menu.addAction("Add to Quick Access", [this, folder_path]() {
         add_to_quick_access(folder_path);
@@ -419,6 +465,11 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
             "Enter folder name:", QLineEdit::Normal, "", &ok);
         if (ok && !name.isEmpty()) {
             QString new_path = folder_path + "/" + name;
+            if (folder_model_ && folder_model_->find_node(new_path)) {
+                QMessageBox::information(this, "Already Added",
+                    QString("The folder '%1' is already in the tree.").arg(name));
+                return;
+            }
             if (folder_model_) folder_model_->add_folder(new_path, true);
             if (mind_map_view_) mind_map_view_->refresh_layout();
         }
@@ -426,12 +477,65 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
     
     if (folder_model_) {
         FolderNode* node = folder_model_->find_node(folder_path);
-        if (node && !node->exists && node->path != source_folder_) {
-            menu.addSeparator();
-            menu.addAction("Remove", [this, folder_path]() {
-                if (folder_model_) folder_model_->remove_folder(folder_path);
-                if (mind_map_view_) mind_map_view_->refresh_layout();
-            });
+        if (node) {
+            // Requirement 13: Root removal — prompt to change root and start new session
+            if (node->path == source_folder_) {
+                menu.addSeparator();
+                menu.addAction("Change Root Folder...", [this]() {
+                    auto reply = QMessageBox::question(this, "Change Root Folder",
+                        "Changing the root folder will save this session and start a new one.\n\n"
+                        "Do you want to proceed?",
+                        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+                    if (reply == QMessageBox::Yes) {
+                        save_folder_tree();
+                        save_quick_access();
+                        save_session_state();
+                        reject();
+                    }
+                });
+            }
+            // Requirement 14: Allow removing any non-root folder (virtual or real)
+            else {
+                menu.addSeparator();
+                menu.addAction("Remove from Tree", [this, folder_path, node]() {
+                    // Requirement 12: Warn about assigned files
+                    if (node->assigned_file_count > 0) {
+                        auto reply = QMessageBox::warning(this, "Folder Has Assigned Files",
+                            QString("This folder has %1 file(s) assigned to it.\n\n"
+                                    "Removing it will set those files back to 'pending' "
+                                    "and they will appear at the bottom of the file list.\n\n"
+                                    "Do you want to proceed?")
+                                .arg(node->assigned_file_count),
+                            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+                        if (reply != QMessageBox::Yes) return;
+                        
+                        // Revert assigned files to pending
+                        for (auto& file : files_) {
+                            if (file.decision == "move" && file.destination_folder == folder_path) {
+                                file.decision = "pending";
+                                file.destination_folder.clear();
+                                move_count_--;
+                            }
+                        }
+                    }
+                    
+                    // Requirement 11: If folder is in Quick Access, ask user
+                    if (quick_access_folders_.contains(folder_path)) {
+                        auto reply = QMessageBox::question(this, "Also in Quick Access",
+                            "This folder is also in Quick Access. Remove it from Quick Access too?",
+                            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                        if (reply == QMessageBox::Yes) {
+                            quick_access_folders_.removeAll(folder_path);
+                            update_quick_access_display();
+                        }
+                    }
+                    
+                    if (folder_model_) folder_model_->remove_folder(folder_path);
+                    if (mind_map_view_) mind_map_view_->refresh_layout();
+                    update_stats();
+                    show_current_file();
+                });
+            }
         }
     }
     
@@ -450,9 +554,30 @@ void AdvancedFileTinderDialog::save_quick_access() {
 void AdvancedFileTinderDialog::add_to_quick_access(const QString& folder_path) {
     if (quick_access_folders_.contains(folder_path)) return;
     if (quick_access_folders_.size() >= kMaxQuickAccess) {
-        QMessageBox::warning(this, "Quick Access Full",
-            QString("Quick Access is full (%1/%2). Remove one first.")
-                .arg(quick_access_folders_.size()).arg(kMaxQuickAccess));
+        // Requirement 10: Prompt to choose one to replace
+        auto reply = QMessageBox::question(this, "Quick Access Full",
+            QString("Quick Access is full (%1/%2).\n\n"
+                    "Do you want to choose a slot to replace?")
+                .arg(quick_access_folders_.size()).arg(kMaxQuickAccess),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+        if (reply != QMessageBox::Yes) return;
+        
+        // Build list of current slots for user to pick from
+        QStringList items;
+        for (int i = 0; i < quick_access_folders_.size(); ++i) {
+            items << QString("%1: %2").arg(i == 9 ? 0 : i + 1)
+                     .arg(QFileInfo(quick_access_folders_[i]).fileName());
+        }
+        bool ok;
+        QString chosen = QInputDialog::getItem(this, "Replace Quick Access Slot",
+            "Select a slot to replace:", items, 0, false, &ok);
+        if (!ok) return;
+        
+        int slot = items.indexOf(chosen);
+        if (slot >= 0) {
+            quick_access_folders_[slot] = folder_path;
+            update_quick_access_display();
+        }
         return;
     }
     quick_access_folders_.append(folder_path);
@@ -559,7 +684,23 @@ void AdvancedFileTinderDialog::show_current_file() {
         int total = static_cast<int>(files_.size());
         progress_bar_->setMaximum(total);
         progress_bar_->setValue(reviewed);
-        progress_bar_->setFormat(QString("%1 / %2").arg(reviewed).arg(total));
+        // Requirement 17: Show assignment count in progress
+        progress_bar_->setFormat(QString("%1 / %2 assigned").arg(reviewed).arg(total));
+    }
+    
+    // Requirement 16: Highlight the assigned folder when showing a file
+    if (mind_map_view_) {
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            const auto& file = files_[file_idx];
+            if (file.decision == "move" && !file.destination_folder.isEmpty()) {
+                mind_map_view_->set_selected_folder(file.destination_folder);
+            } else {
+                mind_map_view_->set_selected_folder(QString());
+            }
+        } else {
+            mind_map_view_->set_selected_folder(QString());
+        }
     }
 }
 
@@ -614,6 +755,22 @@ void AdvancedFileTinderDialog::on_undo() {
     
     // Call base implementation to do the actual undo
     StandaloneFileTinderDialog::on_undo();
+    
+    // Requirement 15: Visual deselect after undo
+    if (mind_map_view_) {
+        // If the current file has a folder assignment, show it; otherwise clear selection
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            const auto& file = files_[file_idx];
+            if (file.decision == "move" && !file.destination_folder.isEmpty()) {
+                mind_map_view_->set_selected_folder(file.destination_folder);
+            } else {
+                mind_map_view_->set_selected_folder(QString());  // Clear selection
+            }
+        } else {
+            mind_map_view_->set_selected_folder(QString());
+        }
+    }
 }
 
 void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
@@ -731,4 +888,62 @@ void AdvancedFileTinderDialog::save_folder_tree() {
     if (folder_model_) {
         folder_model_->save_to_database(db_, source_folder_);
     }
+}
+
+void AdvancedFileTinderDialog::check_missing_folders() {
+    if (!folder_model_ || !folder_model_->root_node()) return;
+    
+    // Collect non-virtual folders that no longer exist on disk
+    QStringList missing;
+    std::function<void(FolderNode*)> check = [&](FolderNode* node) {
+        // Only check non-root, non-virtual folders
+        if (node != folder_model_->root_node() && node->exists && !QDir(node->path).exists()) {
+            missing.append(node->path);
+        }
+        for (const auto& child : node->children) {
+            check(child.get());
+        }
+    };
+    check(folder_model_->root_node());
+    
+    if (missing.isEmpty()) return;
+    
+    // Requirement 2: Warn user about missing folders
+    QString msg = QString("%1 folder(s) no longer exist on disk:\n\n").arg(missing.size());
+    for (const QString& path : missing) {
+        msg += "• " + QFileInfo(path).fileName() + "\n";
+    }
+    msg += "\nDo you want to keep them as virtual folders (will be created during execution), "
+           "or remove them from the tree?";
+    
+    auto reply = QMessageBox::question(this, "Missing Folders Detected", msg,
+        QMessageBox::Yes | QMessageBox::No,  // Yes=keep as virtual, No=remove
+        QMessageBox::Yes);
+    
+    if (reply == QMessageBox::Yes) {
+        // Mark them as virtual (not existing)
+        for (const QString& path : missing) {
+            FolderNode* node = folder_model_->find_node(path);
+            if (node) {
+                node->exists = false;
+            }
+        }
+    } else {
+        // Remove them from tree, reverting any assigned files
+        for (const QString& path : missing) {
+            FolderNode* node = folder_model_->find_node(path);
+            if (node && node->assigned_file_count > 0) {
+                for (auto& file : files_) {
+                    if (file.decision == "move" && file.destination_folder == path) {
+                        file.decision = "pending";
+                        file.destination_folder.clear();
+                        move_count_--;
+                    }
+                }
+            }
+            folder_model_->remove_folder(path);
+        }
+    }
+    
+    if (mind_map_view_) mind_map_view_->refresh_layout();
 }

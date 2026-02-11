@@ -88,6 +88,9 @@ private:
     void load_folder_tree();
     void save_folder_tree();
     
+    // Session checks
+    void check_missing_folders();
+    
 signals:
     void switch_to_basic_mode();
 };

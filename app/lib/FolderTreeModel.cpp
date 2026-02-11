@@ -83,6 +83,8 @@ QVariant FolderTreeModel::data(const QModelIndex& index, int role) const {
             return node->is_pinned;
         case IsConnectedRole:
             return node->is_connected;
+        case IsExternalRole:
+            return node->is_external;
         case ConnectionGroupRole:
             return node->connection_group_id;
         case FileCountRole:
@@ -115,6 +117,7 @@ QHash<int, QByteArray> FolderTreeModel::roleNames() const {
     roles[ExistsRole] = "exists";
     roles[IsPinnedRole] = "isPinned";
     roles[IsConnectedRole] = "isConnected";
+    roles[IsExternalRole] = "isExternal";
     roles[ConnectionGroupRole] = "connectionGroup";
     roles[FileCountRole] = "fileCount";
     return roles;
@@ -181,6 +184,7 @@ void FolderTreeModel::add_folder(const QString& path, bool virtual_folder) {
     child->path = path;
     child->display_name = QFileInfo(path).fileName();
     child->exists = !virtual_folder && QDir(path).exists();
+    child->is_external = !path.startsWith(root_->path);
     child->parent = parent_node;
     
     parent_node->children.push_back(std::move(child));

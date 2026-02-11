@@ -1033,7 +1033,7 @@ QString StandaloneFileTinderDialog::show_folder_picker() {
 void StandaloneFileTinderDialog::show_review_summary() {
     QDialog summary_dialog(this);
     summary_dialog.setWindowTitle("Review Summary");
-    summary_dialog.setMinimumSize(ui::scaling::scaled(700), ui::scaling::scaled(500));
+    summary_dialog.setMinimumSize(ui::scaling::scaled(800), ui::scaling::scaled(550));
     
     auto* layout = new QVBoxLayout(&summary_dialog);
     
@@ -1064,58 +1064,94 @@ void StandaloneFileTinderDialog::show_review_summary() {
     
     layout->addWidget(stats_widget);
     
-    // Move destinations table
-    if (move_count_ > 0) {
-        auto* move_label = new QLabel("Move Destinations:");
-        move_label->setStyleSheet("font-weight: bold; margin-top: 15px;");
-        layout->addWidget(move_label);
+    // Requirement 6 + 22-23: Editable per-file review table with mode column
+    auto* files_label = new QLabel("File Decisions (click Decision to change):");
+    files_label->setStyleSheet("font-weight: bold; margin-top: 10px;");
+    layout->addWidget(files_label);
+    
+    auto* table = new QTableWidget();
+    table->setColumnCount(4);
+    table->setHorizontalHeaderLabels({"File", "Decision", "Destination", "Mode"});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    
+    // Determine mode name for this dialog
+    QString mode_name = windowTitle().contains("Advanced") ? "Advanced" : "Basic";
+    
+    // Populate only files with non-pending decisions
+    int visible_row = 0;
+    std::vector<int> row_to_file_idx;
+    for (int i = 0; i < static_cast<int>(files_.size()); ++i) {
+        if (files_[i].decision != "pending") {
+            visible_row++;
+        }
+    }
+    table->setRowCount(visible_row);
+    
+    visible_row = 0;
+    for (int i = 0; i < static_cast<int>(files_.size()); ++i) {
+        const auto& file = files_[i];
+        if (file.decision == "pending") continue;
         
-        auto* table = new QTableWidget();
-        table->setColumnCount(3);
-        table->setHorizontalHeaderLabels({"Destination Folder", "Files", "Size"});
-        table->horizontalHeader()->setStretchLastSection(true);
+        row_to_file_idx.push_back(i);
         
-        // Collect move destinations
-        QMap<QString, QPair<int, qint64>> dest_stats;
-        for (const auto& file : files_) {
-            if (file.decision == "move" && !file.destination_folder.isEmpty()) {
-                auto& stats = dest_stats[file.destination_folder];
-                stats.first++;
-                stats.second += file.size;
+        // File name (read-only)
+        auto* name_item = new QTableWidgetItem(file.name);
+        name_item->setFlags(name_item->flags() & ~Qt::ItemIsEditable);
+        table->setItem(visible_row, 0, name_item);
+        
+        // Decision (editable via combo box)
+        auto* combo = new QComboBox();
+        combo->addItems({"keep", "delete", "skip", "pending"});
+        combo->setCurrentText(file.decision == "move" ? "keep" : file.decision);
+        // If it was a move, include that option
+        if (file.decision == "move") {
+            combo->addItem("move");
+            combo->setCurrentText("move");
+        }
+        table->setCellWidget(visible_row, 1, combo);
+        
+        // Destination (read-only display)
+        QString dest_display;
+        if (file.decision == "move" && !file.destination_folder.isEmpty()) {
+            dest_display = QFileInfo(file.destination_folder).fileName();
+            if (!QDir(file.destination_folder).exists()) {
+                dest_display += " [NEW]";
             }
         }
+        auto* dest_item = new QTableWidgetItem(dest_display);
+        dest_item->setFlags(dest_item->flags() & ~Qt::ItemIsEditable);
+        dest_item->setToolTip(file.destination_folder);
+        table->setItem(visible_row, 2, dest_item);
         
-        table->setRowCount(dest_stats.size());
-        int row = 0;
-        int new_folder_count = 0;
-        for (auto it = dest_stats.begin(); it != dest_stats.end(); ++it, ++row) {
-            QString folder_display = it.key();
-            // Mark folders that don't exist yet (will be created)
-            if (!QDir(it.key()).exists()) {
-                folder_display = it.key() + "  [NEW]";
-                new_folder_count++;
-            }
-            table->setItem(row, 0, new QTableWidgetItem(folder_display));
-            table->setItem(row, 1, new QTableWidgetItem(QString::number(it.value().first)));
-            
-            qint64 size = it.value().second;
-            QString size_str;
-            if (size < 1024) size_str = QString("%1 B").arg(size);
-            else if (size < 1024LL*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
-            else size_str = QString("%1 MB").arg(size/(1024.0*1024.0), 0, 'f', 2);
-            table->setItem(row, 2, new QTableWidgetItem(size_str));
+        // Mode column (Req 22-23)
+        auto* mode_item = new QTableWidgetItem(mode_name);
+        mode_item->setFlags(mode_item->flags() & ~Qt::ItemIsEditable);
+        table->setItem(visible_row, 3, mode_item);
+        
+        visible_row++;
+    }
+    
+    table->resizeColumnsToContents();
+    table->setColumnWidth(0, qMax(table->columnWidth(0), 200));
+    layout->addWidget(table, 1);
+    
+    // Folder creation note
+    int new_folder_count = 0;
+    QSet<QString> dest_folders;
+    for (const auto& file : files_) {
+        if (file.decision == "move" && !file.destination_folder.isEmpty()) {
+            dest_folders.insert(file.destination_folder);
         }
-        
-        table->resizeColumnsToContents();
-        layout->addWidget(table);
-        
-        if (new_folder_count > 0) {
-            auto* new_folders_note = new QLabel(
-                QString("Note: %1 folder(s) marked [NEW] will be created during execution.")
-                    .arg(new_folder_count));
-            new_folders_note->setStyleSheet("color: #f39c12; font-style: italic; margin-top: 4px;");
-            layout->addWidget(new_folders_note);
-        }
+    }
+    for (const QString& folder : dest_folders) {
+        if (!QDir(folder).exists()) new_folder_count++;
+    }
+    if (new_folder_count > 0) {
+        auto* note = new QLabel(
+            QString("Note: %1 folder(s) will be created during execution.").arg(new_folder_count));
+        note->setStyleSheet("color: #f39c12; font-style: italic;");
+        layout->addWidget(note);
     }
     
     // Buttons
@@ -1133,7 +1169,29 @@ void StandaloneFileTinderDialog::show_review_summary() {
         "padding: 10px 20px; border-radius: 6px; }"
         "QPushButton:hover { background-color: #27ae60; }"
     );
-    connect(execute_btn, &QPushButton::clicked, &summary_dialog, [&]() {
+    connect(execute_btn, &QPushButton::clicked, &summary_dialog, [&, table]() {
+        // Apply any edits from combo boxes back to files_
+        for (int r = 0; r < table->rowCount(); ++r) {
+            auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (!combo || r >= static_cast<int>(row_to_file_idx.size())) continue;
+            
+            int file_idx = row_to_file_idx[r];
+            auto& file = files_[file_idx];
+            QString new_decision = combo->currentText();
+            
+            if (new_decision != file.decision) {
+                // Update counts
+                update_decision_count(file.decision, -1);
+                if (new_decision == "pending") {
+                    // If reverting to pending, clear destination
+                    file.destination_folder.clear();
+                } else {
+                    update_decision_count(new_decision, 1);
+                }
+                file.decision = new_decision;
+            }
+        }
+        
         summary_dialog.accept();
         execute_decisions();
     });
@@ -1165,6 +1223,20 @@ void StandaloneFileTinderDialog::execute_decisions() {
             plan.folders_to_create.push_back(folder);
         }
     }
+    
+    // Requirement 20: Verify we can create virtual folders before proceeding
+    for (const QString& folder : plan.folders_to_create) {
+        if (!QDir().mkpath(folder)) {
+            auto reply = QMessageBox::warning(this, "Folder Creation Failed",
+                QString("Could not create folder:\n%1\n\n"
+                        "Files assigned to this folder will be skipped.\n"
+                        "Continue with remaining operations?").arg(folder),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (reply != QMessageBox::Yes) return;
+        }
+    }
+    // Clear the create list since we handled it above
+    plan.folders_to_create.clear();
     
     // Progress dialog
     QProgressDialog progress("Executing decisions...", "Cancel", 0, 100, this);

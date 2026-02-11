@@ -33,6 +33,7 @@ void FolderButton::update_display() {
     for (int i = 0; i < depth_; ++i) indent += "    ";
     
     QString icon = node_->exists ? "[D]" : "[+]";
+    if (node_->is_external) icon = "[E]";
     QString count_str;
     if (node_->assigned_file_count > 0) {
         count_str = QString(" (%1)").arg(node_->assigned_file_count);
@@ -63,6 +64,13 @@ void FolderButton::update_style() {
             "background-color: #fff8e1; border: 1px dashed #ffc107; "
             "border-radius: 4px; color: #333; font-size: 12px; }"
             "QPushButton:hover { background-color: #fff3cd; border-color: #e0a800; }"
+        ).arg(left_margin + 10));
+    } else if (node_->is_external) {
+        setStyleSheet(QString(
+            "QPushButton { text-align: left; padding: 6px 10px 6px %1px; "
+            "background-color: #f3e5f5; border: 1px solid #ab47bc; "
+            "border-radius: 4px; color: #6a1b9a; font-size: 12px; }"
+            "QPushButton:hover { background-color: #e1bee7; border-color: #8e24aa; }"
         ).arg(left_margin + 10));
     } else {
         setStyleSheet(QString(
