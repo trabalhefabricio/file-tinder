@@ -237,9 +237,7 @@ private:
             launch_advanced();
         });
         
-        // Show the dialog first, then initialize (so UI appears immediately)
-        dlg->show();
-        QApplication::processEvents();
+        // Initialize first (builds UI, scans files, sets size), then exec() shows and runs event loop
         dlg->initialize();
         dlg->exec();
         dlg->deleteLater();
@@ -257,9 +255,7 @@ private:
             launch_basic();
         });
         
-        // Show the dialog first, then initialize (so UI appears immediately)
-        dlg->show();
-        QApplication::processEvents();
+        // Initialize first (builds UI, scans files, sets size), then exec() shows and runs event loop
         dlg->initialize();
         dlg->exec();
         dlg->deleteLater();

@@ -206,6 +206,7 @@ protected:
     void closeEvent(QCloseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;  // New: handle resize
     void reject() override;  // Override to route Escape/close through save logic
+    bool eventFilter(QObject* obj, QEvent* event) override;  // Double-click to open file
     
 signals:
     void session_completed();

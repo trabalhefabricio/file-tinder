@@ -19,6 +19,8 @@
 #include <QMimeDatabase>
 #include <QSettings>
 #include <QScreen>
+#include <QDesktopServices>
+#include <QUrl>
 
 AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
                                                    DatabaseManager& db,
@@ -197,6 +199,9 @@ void AdvancedFileTinderDialog::setup_mind_map() {
 void AdvancedFileTinderDialog::setup_file_info_panel() {
     file_info_panel_ = new QWidget();
     file_info_panel_->setStyleSheet("background-color: #f5f5f5; border-radius: 4px; padding: 8px;");
+    file_info_panel_->setCursor(Qt::PointingHandCursor);
+    file_info_panel_->setToolTip("Double-click to open file");
+    file_info_panel_->installEventFilter(this);
     auto* info_layout = new QHBoxLayout(file_info_panel_);
     info_layout->setContentsMargins(10, 8, 10, 8);
     
@@ -580,8 +585,9 @@ void AdvancedFileTinderDialog::show_current_file() {
 }
 
 void AdvancedFileTinderDialog::closeEvent(QCloseEvent* event) {
-    // Let QDialog handle it — QDialog::closeEvent() calls reject()
-    QDialog::closeEvent(event);
+    // Route through reject() — don't delegate to QDialog::closeEvent
+    event->ignore();
+    reject();
 }
 
 void AdvancedFileTinderDialog::reject() {
@@ -591,6 +597,17 @@ void AdvancedFileTinderDialog::reject() {
     
     // Base class reject() shows save prompt and terminates exec()
     StandaloneFileTinderDialog::reject();
+}
+
+bool AdvancedFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
+    if (obj == file_info_panel_ && event->type() == QEvent::MouseButtonDblClick) {
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
+        }
+        return true;
+    }
+    return StandaloneFileTinderDialog::eventFilter(obj, event);
 }
 
 void AdvancedFileTinderDialog::on_finish() {

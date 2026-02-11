@@ -75,6 +75,7 @@ private:
     void show_current_file() override;  // Override base class implementation
     void closeEvent(QCloseEvent* event) override;
     void reject() override;  // Save folder tree/quick access before closing
+    bool eventFilter(QObject* obj, QEvent* event) override;  // Double-click to open file
     
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;

@@ -29,6 +29,9 @@
 #include <QSplitter>
 #include <QPointer>
 #include <QSet>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QMouseEvent>
 #include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
@@ -72,9 +75,6 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     
     setWindowTitle("File Tinder - Basic Mode");
     
-    // Set minimum width only — height adapts to screen
-    setMinimumWidth(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth));
-    
     // Setup resize timer for debouncing preview updates
     resize_timer_ = new QTimer(this);
     resize_timer_->setSingleShot(true);
@@ -109,9 +109,11 @@ void StandaloneFileTinderDialog::initialize() {
     // Size window to fit within the available screen area
     if (auto* screen = QApplication::primaryScreen()) {
         QRect avail = screen->availableGeometry();
-        int w = qMin(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth), avail.width() * 9 / 10);
-        int h = qMin(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinHeight), avail.height() * 8 / 10);
-        resize(w, h);
+        int target_w = qMin(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinWidth),
+                            avail.width() * 85 / 100);
+        int target_h = qMin(ui::scaling::scaled(ui::dimensions::kStandaloneFileTinderMinHeight),
+                            avail.height() * 75 / 100);
+        resize(target_w, target_h);
     }
 }
 
@@ -248,15 +250,16 @@ void StandaloneFileTinderDialog::setup_ui() {
     // Centered file icon (for non-image files)
     file_icon_label_ = new QLabel();
     file_icon_label_->setAlignment(Qt::AlignCenter);
-    file_icon_label_->setMinimumHeight(80);
     file_icon_label_->setStyleSheet("font-size: 64px;");
     preview_layout->addWidget(file_icon_label_);
     
     // Preview label (for images/text)
     preview_label_ = new QLabel();
-    preview_label_->setMinimumSize(ui::scaling::scaled(300), ui::scaling::scaled(200));
     preview_label_->setAlignment(Qt::AlignCenter);
     preview_label_->setWordWrap(true);
+    preview_label_->setCursor(Qt::PointingHandCursor);
+    preview_label_->setToolTip("Double-click to open file");
+    preview_label_->installEventFilter(this);
     preview_layout->addWidget(preview_label_, 1);
     
     // File name and info below preview
@@ -1242,8 +1245,10 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
 }
 
 void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
-    // Let QDialog handle it — QDialog::closeEvent() calls reject() for us
-    QDialog::closeEvent(event);
+    // Don't delegate to QDialog::closeEvent — it accepts the event even if reject() cancels.
+    // Instead, ignore the event and route through reject() which handles save prompt.
+    event->ignore();
+    reject();
 }
 
 void StandaloneFileTinderDialog::resizeEvent(QResizeEvent* event) {
@@ -1293,6 +1298,17 @@ void StandaloneFileTinderDialog::reject() {
         save_session_state();
         QDialog::reject();
     }
+}
+
+bool StandaloneFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
+    if (obj == preview_label_ && event->type() == QEvent::MouseButtonDblClick) {
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
+        }
+        return true;
+    }
+    return QDialog::eventFilter(obj, event);
 }
 
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {
