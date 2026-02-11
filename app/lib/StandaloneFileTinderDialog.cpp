@@ -1241,7 +1241,7 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
 }
 
 void StandaloneFileTinderDialog::closeEvent(QCloseEvent* event) {
-    // Guard against re-entrant close (done() can trigger reject() → close() → closeEvent again)
+    // Guard against re-entrant close (done() can trigger reject() -> close() -> closeEvent again)
     if (closing_) {
         event->accept();
         return;

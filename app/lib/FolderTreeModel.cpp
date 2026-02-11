@@ -131,9 +131,8 @@ void FolderTreeModel::set_root_folder(const QString& path) {
     }
     root_->exists = QDir(path).exists();
     
-    // Start with root only — user adds destination folders via the "+" button.
-    // Previously auto-scanned subdirectories, but the user wants to manually
-    // build the folder tree as needed.
+    // Start with root only — destination folders are added manually via
+    // the "+" button (Create New Folder or Add Existing Folder).
     
     endResetModel();
     emit folder_structure_changed();
