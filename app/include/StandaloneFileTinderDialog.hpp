@@ -22,6 +22,7 @@ class DatabaseManager;
 class QPropertyAnimation;
 class QGraphicsOpacityEffect;
 class ImagePreviewWindow;
+struct ExecutionResult;
 
 // Action record for undo functionality
 struct ActionRecord {
@@ -42,6 +43,7 @@ struct FileToProcess {
     QString destination_folder; // For move operations
     QString mime_type;          // MIME type for filtering
     bool is_directory;          // For folder support
+    bool has_duplicate = false; // Cached: another file shares same name+size
 };
 
 // File filter types
@@ -124,6 +126,9 @@ protected:
     QPushButton* sort_order_btn_;  // Asc/Desc toggle
     QCheckBox* folders_checkbox_;  // Include folders toggle
     QLabel* shortcuts_label_;
+    QLabel* file_position_label_;
+    QLabel* size_badge_label_;
+    QLineEdit* search_box_;
     
     QPushButton* back_btn_;
     QPushButton* delete_btn_;
@@ -143,6 +148,7 @@ protected:
     
     // Close guard to prevent re-entrant close
     bool closing_ = false;
+    bool animating_ = false;
     
     // Initialization
     virtual void setup_ui();
@@ -179,6 +185,7 @@ protected:
     virtual void on_delete();
     virtual void on_skip();
     virtual void on_back();
+    virtual void on_search(const QString& text);
     virtual void on_undo();           // Undo last action
     virtual void on_show_preview();   // Open image in separate window
     virtual void on_finish();
@@ -197,9 +204,14 @@ protected:
     // Review screen
     void show_review_summary();
     void execute_decisions();
+    void show_execution_results(const ExecutionResult& result, qint64 elapsed_ms);
+    virtual QStringList get_destination_folders() const;  // Grid folders for review dropdown
     
     // Help
     void show_shortcuts_help();
+    
+    // Reset progress
+    void on_reset_progress();
     
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;

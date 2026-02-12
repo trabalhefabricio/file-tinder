@@ -32,6 +32,9 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QMouseEvent>
+#include <QElapsedTimer>
+#include <QMenu>
+#include <QImageReader>
 #include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
@@ -71,9 +74,12 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , switch_mode_btn_(nullptr)
     , help_btn_(nullptr)
     , swipe_animation_(nullptr)
-    , resize_timer_(nullptr) {
+    , resize_timer_(nullptr)
+    , file_position_label_(nullptr)
+    , size_badge_label_(nullptr)
+    , search_box_(nullptr) {
     
-    setWindowTitle("File Tinder - Basic Mode");
+    setWindowTitle(QString("File Tinder - Basic Mode — %1").arg(QFileInfo(source_folder).fileName()));
     
     // Setup resize timer for debouncing preview updates
     resize_timer_ = new QTimer(this);
@@ -142,6 +148,10 @@ void StandaloneFileTinderDialog::setup_ui() {
         "font-size: %1px; font-weight: bold; color: %2;"
     ).arg(ui::fonts::kHeaderSize).arg(ui::colors::kMoveColor));
     top_layout->addWidget(title_label);
+    
+    file_position_label_ = new QLabel("File 0 of 0");
+    file_position_label_->setStyleSheet("color: #95a5a6; font-size: 12px;");
+    top_layout->addWidget(file_position_label_);
     
     top_layout->addStretch();
     
@@ -257,17 +267,25 @@ void StandaloneFileTinderDialog::setup_ui() {
     preview_label_ = new QLabel();
     preview_label_->setAlignment(Qt::AlignCenter);
     preview_label_->setWordWrap(true);
-    preview_label_->setCursor(Qt::PointingHandCursor);
-    preview_label_->setToolTip("Double-click to open file");
-    preview_label_->installEventFilter(this);
     preview_layout->addWidget(preview_label_, 1);
     
-    // File name and info below preview
+    // File name and info below preview — double-click to open
     file_info_label_ = new QLabel();
     file_info_label_->setAlignment(Qt::AlignCenter);
     file_info_label_->setStyleSheet("color: #ecf0f1; padding: 10px; font-size: 13px;");
     file_info_label_->setWordWrap(true);
+    file_info_label_->setCursor(Qt::PointingHandCursor);
+    file_info_label_->setToolTip("Double-click to open file");
+    file_info_label_->installEventFilter(this);
     preview_layout->addWidget(file_info_label_);
+    
+    size_badge_label_ = new QLabel();
+    size_badge_label_->setAlignment(Qt::AlignCenter);
+    size_badge_label_->setStyleSheet(
+        "font-size: 16px; font-weight: bold; color: #f39c12; "
+        "background-color: #2c3e50; padding: 4px 8px; border-radius: 4px;"
+    );
+    preview_layout->addWidget(size_badge_label_);
     
     main_layout->addWidget(preview_widget, 1);  // Stretch to fill space
     
@@ -339,33 +357,18 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     action_layout->addLayout(main_btn_row);
     
-    // Row 2: BACK and SKIP (thinner buttons)
-    auto* nav_btn_row = new QHBoxLayout();
-    nav_btn_row->setSpacing(20);
-    
-    back_btn_ = new QPushButton("Back [Up]");
-    back_btn_->setFixedHeight(ui::scaling::scaled(40));
-    back_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    back_btn_->setStyleSheet(
-        "QPushButton { font-size: 12px; font-weight: bold; "
-        "background-color: #7f8c8d; border: 1px solid #6c7a7d; color: white; border-radius: 4px; }"
-        "QPushButton:hover { background-color: #95a5a6; }"
-    );
-    connect(back_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_back);
-    nav_btn_row->addWidget(back_btn_);
-    
-    skip_btn_ = new QPushButton("Skip [Down]");
+    // Row 2: SKIP only (Back removed — use Undo instead)
+    skip_btn_ = new QPushButton("Skip [↓]");
     skip_btn_->setFixedHeight(ui::scaling::scaled(40));
     skip_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     skip_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; font-weight: bold; "
         "background-color: %1; border: 1px solid #d68910; color: white; border-radius: 4px; }"
         "QPushButton:hover { background-color: #e67e22; }"
+        "QPushButton:disabled { background-color: #5d4e37; color: #888; }"
     ).arg(ui::colors::kSkipColor));
     connect(skip_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_skip);
-    nav_btn_row->addWidget(skip_btn_);
-    
-    action_layout->addLayout(nav_btn_row);
+    action_layout->addWidget(skip_btn_);
     
     main_layout->addWidget(action_widget);
     
@@ -388,18 +391,48 @@ void StandaloneFileTinderDialog::setup_ui() {
     connect(undo_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_undo);
     bottom_layout->addWidget(undo_btn_);
     
-    // Preview button (for opening images in separate window)
+    // Preview toggle (toggles inline preview in basic mode)
     preview_btn_ = new QPushButton("Preview [P]");
     preview_btn_->setFixedHeight(ui::scaling::scaled(36));
+    preview_btn_->setCheckable(true);
+    preview_btn_->setChecked(true);
     preview_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: %1; border-radius: 4px; color: white; }"
         "QPushButton:hover { background-color: #2980b9; }"
+        "QPushButton:checked { background-color: #2980b9; border: 2px solid #1abc9c; }"
     ).arg(ui::colors::kMoveColor));
     connect(preview_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_show_preview);
     bottom_layout->addWidget(preview_btn_);
     
+    // Reset Progress button
+    auto* reset_btn = new QPushButton("Reset");
+    reset_btn->setFixedHeight(ui::scaling::scaled(36));
+    reset_btn->setStyleSheet(
+        "QPushButton { font-size: 12px; padding: 8px 15px; "
+        "background-color: #e74c3c; border-radius: 4px; color: white; }"
+        "QPushButton:hover { background-color: #c0392b; }"
+    );
+    reset_btn->setToolTip("Reset all decisions and start over");
+    connect(reset_btn, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_reset_progress);
+    bottom_layout->addWidget(reset_btn);
+    
     bottom_layout->addStretch();
+    
+    // Search box
+    search_box_ = new QLineEdit();
+    search_box_->setPlaceholderText("Search files...");
+    search_box_->setFixedWidth(ui::scaling::scaled(150));
+    search_box_->setFixedHeight(ui::scaling::scaled(36));
+    search_box_->setStyleSheet(
+        "QLineEdit { padding: 4px 8px; background-color: #34495e; "
+        "border-radius: 4px; color: white; border: 1px solid #4a6078; }"
+        "QLineEdit:focus { border: 2px solid #3498db; }"
+    );
+    connect(search_box_, &QLineEdit::textChanged, this, &StandaloneFileTinderDialog::on_search);
+    bottom_layout->addWidget(search_box_);
+    
+    bottom_layout->addSpacing(10);
     
     finish_btn_ = new QPushButton("Finish Review");
     finish_btn_->setFixedHeight(ui::scaling::scaled(36));
@@ -414,7 +447,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_layout->addWidget(bottom_bar);
     
     // Keyboard shortcuts hint
-    shortcuts_label_ = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | Z=Undo | P=Preview | ?=Help");
+    shortcuts_label_ = new QLabel("→ Keep  |  ← Delete  |  ↓ Skip  |  Z/⌫ Undo  |  P Preview  |  Enter Finish  |  ? Help");
     shortcuts_label_->setAlignment(Qt::AlignCenter);
     shortcuts_label_->setStyleSheet("color: #7f8c8d; font-size: 10px;");
     main_layout->addWidget(shortcuts_label_);
@@ -441,7 +474,18 @@ void StandaloneFileTinderDialog::scan_files() {
     
     QStringList entries = dir.entryList(filters);
     
-    for (const QString& entry : entries) {
+    // Show progress for large directories (>200 files)
+    const bool show_progress = entries.size() > 200;
+    QProgressDialog* progress = nullptr;
+    if (show_progress) {
+        progress = new QProgressDialog("Scanning files...", QString(), 0, entries.size(), this);
+        progress->setWindowModality(Qt::WindowModal);
+        progress->setMinimumDuration(0);
+        progress->show();
+    }
+    
+    for (int idx = 0; idx < entries.size(); ++idx) {
+        const QString& entry = entries[idx];
         try {
             QString full_path = dir.absoluteFilePath(entry);
             QFileInfo info(full_path);
@@ -462,9 +506,29 @@ void StandaloneFileTinderDialog::scan_files() {
         } catch (const std::exception& ex) {
             LOG_ERROR("BasicMode", QString("Error scanning file %1: %2").arg(entry, ex.what()));
         }
+        
+        if (progress && (idx % 50 == 0)) {
+            progress->setValue(idx);
+            QApplication::processEvents();
+        }
     }
     
+    delete progress;
+    
     LOG_INFO("BasicMode", QString("Scanned %1 files from %2").arg(files_.size()).arg(source_folder_));
+    
+    // Build duplicate detection cache (name+size → count)
+    QHash<QPair<QString, qint64>, int> dup_map;
+    for (const auto& f : files_) {
+        if (!f.is_directory) {
+            dup_map[{f.name, f.size}]++;
+        }
+    }
+    for (auto& f : files_) {
+        if (!f.is_directory) {
+            f.has_duplicate = dup_map.value({f.name, f.size}, 0) > 1;
+        }
+    }
     
     // Update progress
     if (!files_.empty() && progress_bar_) {
@@ -519,6 +583,9 @@ void StandaloneFileTinderDialog::show_current_file() {
         if (file_icon_label_) file_icon_label_->clear();
         if (preview_label_) preview_label_->setText("No more files to review");
         if (file_info_label_) file_info_label_->setText("");
+        if (keep_btn_) keep_btn_->setEnabled(false);
+        if (delete_btn_) delete_btn_->setEnabled(false);
+        if (skip_btn_) skip_btn_->setEnabled(false);
         return;
     }
     
@@ -526,6 +593,19 @@ void StandaloneFileTinderDialog::show_current_file() {
     update_preview(file.path);
     update_file_info(file);
     update_progress();
+    
+    // Update file position header
+    if (file_position_label_) {
+        int pos = current_filtered_index_ + 1;
+        int total = static_cast<int>(filtered_indices_.size());
+        file_position_label_->setText(QString("File %1 of %2").arg(pos).arg(total));
+    }
+    
+    // Context-aware button state
+    bool has_file = (file_idx >= 0);
+    if (keep_btn_) keep_btn_->setEnabled(has_file);
+    if (delete_btn_) delete_btn_->setEnabled(has_file);
+    if (skip_btn_) skip_btn_->setEnabled(has_file);
 }
 
 void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
@@ -570,16 +650,22 @@ void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
                                           "color: #3498db; font-weight: bold;'>%1</span>").arg(icon));
     }
     
-    // For images, show preview (but not a separate window)
+    // For images, use QImageReader with scaled size for efficient loading
+    // (avoids loading full resolution into memory, then scaling — much faster for large images)
     if (type.startsWith("image/") && !finfo.isDir()) {
-        QPixmap pixmap(file_path);
-        if (!pixmap.isNull()) {
-            // Scale to fit the preview area
+        QImageReader reader(file_path);
+        if (reader.canRead()) {
             int max_w = preview_label_->width() > 100 ? preview_label_->width() - 20 : 400;
             int max_h = preview_label_->height() > 100 ? preview_label_->height() - 20 : 300;
-            pixmap = pixmap.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            preview_label_->setPixmap(pixmap);
-            return;
+            QSize orig = reader.size();
+            if (orig.isValid()) {
+                reader.setScaledSize(orig.scaled(max_w, max_h, Qt::KeepAspectRatio));
+            }
+            QImage img = reader.read();
+            if (!img.isNull()) {
+                preview_label_->setPixmap(QPixmap::fromImage(img));
+                return;
+            }
         }
     }
     
@@ -630,25 +716,47 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
                        (file.extension.isEmpty() ? "Unknown" : file.extension.toUpper());
     
     if (!file_info_label_) return;
+    
+    // Duplicate detection: use cached flag from scan
+    QString dup_warning;
+    if (file.has_duplicate) {
+        dup_warning = "<br><span style='color: #e74c3c; font-size: 11px;'>⚠ Possible duplicate found</span>";
+    }
+    
     file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
-                                      "<span style='color: #95a5a6;'>%2 | %3 | %4</span>")
-                              .arg(file.name, size_str, type_str, file.modified_date));
+                                      "<span style='color: #95a5a6;'>%2 | %3 | %4</span>%5")
+                              .arg(file.name, size_str, type_str, file.modified_date, dup_warning));
+    
+    // Prominent file size badge
+    if (size_badge_label_) {
+        size_badge_label_->setText(size_str);
+    }
 }
 
 void StandaloneFileTinderDialog::update_progress() {
-    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
-    int total = static_cast<int>(files_.size());
     int filtered_total = static_cast<int>(filtered_indices_.size());
     
-    if (progress_bar_) progress_bar_->setValue(reviewed);
+    // Count reviewed files within filtered set
+    int filtered_reviewed = 0;
+    for (int idx : filtered_indices_) {
+        if (files_[idx].decision != "pending") {
+            filtered_reviewed++;
+        }
+    }
     
-    int percent = total > 0 ? (reviewed * 100 / total) : 0;
+    if (progress_bar_) {
+        progress_bar_->setMaximum(filtered_total);
+        progress_bar_->setValue(filtered_reviewed);
+    }
+    
+    int percent = filtered_total > 0 ? (filtered_reviewed * 100 / filtered_total) : 0;
+    int total = static_cast<int>(files_.size());
     QString filter_info = (current_filter_ != FileFilterType::All) 
-        ? QString(" (showing %1 of %2)").arg(filtered_total).arg(total)
+        ? QString(" (filtered: %1 of %2)").arg(filtered_total).arg(total)
         : "";
     if (progress_label_) {
         progress_label_->setText(QString("Progress: %1 / %2 files (%3%)%4")
-                                 .arg(reviewed).arg(total).arg(percent).arg(filter_info));
+                                 .arg(filtered_reviewed).arg(filtered_total).arg(percent).arg(filter_info));
     }
 }
 
@@ -711,6 +819,7 @@ void StandaloneFileTinderDialog::record_action(int file_index, const QString& ol
 
 void StandaloneFileTinderDialog::on_keep() {
     try {
+        if (animating_) return;
         int file_idx = get_current_file_index();
         if (file_idx < 0) return;
         
@@ -728,6 +837,12 @@ void StandaloneFileTinderDialog::on_keep() {
         // Record for undo
         record_action(file_idx, old_decision, "keep");
         
+        // Visual feedback: brief flash on stats
+        if (progress_label_) {
+            progress_label_->setText(QString("<span style='color: %1;'>✓ Kept: %2</span>")
+                .arg(ui::colors::kKeepColor, file.name));
+        }
+        
         animate_swipe(true);
         advance_to_next();
     } catch (const std::exception& ex) {
@@ -738,6 +853,7 @@ void StandaloneFileTinderDialog::on_keep() {
 
 void StandaloneFileTinderDialog::on_delete() {
     try {
+        if (animating_) return;
         int file_idx = get_current_file_index();
         if (file_idx < 0) return;
         
@@ -755,6 +871,12 @@ void StandaloneFileTinderDialog::on_delete() {
         // Record for undo
         record_action(file_idx, old_decision, "delete");
         
+        // Visual feedback
+        if (progress_label_) {
+            progress_label_->setText(QString("<span style='color: %1;'>✗ Deleted: %2</span>")
+                .arg(ui::colors::kDeleteColor, file.name));
+        }
+        
         animate_swipe(true);
         advance_to_next();
     } catch (const std::exception& ex) {
@@ -765,6 +887,7 @@ void StandaloneFileTinderDialog::on_delete() {
 
 void StandaloneFileTinderDialog::on_skip() {
     try {
+        if (animating_) return;
         int file_idx = get_current_file_index();
         if (file_idx < 0) return;
         
@@ -781,6 +904,12 @@ void StandaloneFileTinderDialog::on_skip() {
         
         // Record for undo
         record_action(file_idx, old_decision, "skip");
+        
+        // Visual feedback
+        if (progress_label_) {
+            progress_label_->setText(QString("<span style='color: %1;'>↓ Skipped: %2</span>")
+                .arg(ui::colors::kSkipColor, file.name));
+        }
         
         animate_swipe(true);
         advance_to_next();
@@ -858,56 +987,57 @@ void StandaloneFileTinderDialog::on_undo() {
 
 void StandaloneFileTinderDialog::on_show_preview() {
     try {
-        int file_idx = get_current_file_index();
-        if (file_idx < 0) return;
-        
-        const auto& file = files_[file_idx];
-        
-        // Check if it's an image
-        if (!file.mime_type.startsWith("image/")) {
-            QMessageBox::information(this, "Preview", 
-                "Preview is only available for image files.\n"
-                "Current file type: " + file.mime_type);
-            return;
+        // Toggle inline preview visibility in basic mode
+        if (preview_label_) {
+            bool showing = preview_label_->isVisible();
+            preview_label_->setVisible(!showing);
+            if (file_icon_label_) file_icon_label_->setVisible(!showing);
+            if (preview_btn_) preview_btn_->setChecked(!showing);
         }
-        
-        // Create or show the image preview window
-        if (!image_preview_window_) {
-            image_preview_window_ = new ImagePreviewWindow(this);
-            
-            // Connect navigation signals
-            connect(image_preview_window_, &ImagePreviewWindow::next_requested, this, [this]() {
-                on_skip();  // Move to next file
-                if (image_preview_window_ && image_preview_window_->isVisible()) {
-                    int idx = get_current_file_index();
-                    if (idx >= 0 && files_[idx].mime_type.startsWith("image/")) {
-                        image_preview_window_->set_image(files_[idx].path);
-                    }
-                }
-            });
-            
-            connect(image_preview_window_, &ImagePreviewWindow::previous_requested, this, [this]() {
-                on_back();  // Move to previous file
-                if (image_preview_window_ && image_preview_window_->isVisible()) {
-                    int idx = get_current_file_index();
-                    if (idx >= 0 && files_[idx].mime_type.startsWith("image/")) {
-                        image_preview_window_->set_image(files_[idx].path);
-                    }
-                }
-            });
-        }
-        
-        image_preview_window_->set_image(file.path);
-        image_preview_window_->show();
-        image_preview_window_->raise();
-        image_preview_window_->activateWindow();
-        
-        LOG_DEBUG("BasicMode", QString("Opened preview for: %1").arg(file.name));
-        
     } catch (const std::exception& ex) {
         LOG_ERROR("BasicMode", QString("Error in on_show_preview: %1").arg(ex.what()));
-        QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
     }
+}
+
+void StandaloneFileTinderDialog::on_reset_progress() {
+    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    if (reviewed == 0) {
+        QMessageBox::information(this, "Nothing to Reset", "No decisions have been made yet.");
+        return;
+    }
+    
+    auto reply = QMessageBox::question(this, "Reset Progress",
+        QString("This will clear all %1 decisions and start over.\n\n"
+                "This cannot be undone. Continue?").arg(reviewed),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    
+    if (reply != QMessageBox::Yes) return;
+    
+    // Reset all decisions
+    for (auto& file : files_) {
+        file.decision = "pending";
+        file.destination_folder.clear();
+    }
+    keep_count_ = 0;
+    delete_count_ = 0;
+    skip_count_ = 0;
+    move_count_ = 0;
+    undo_stack_.clear();
+    if (undo_btn_) undo_btn_->setEnabled(false);
+    
+    // Clear from database
+    db_.clear_session(source_folder_);
+    
+    // Reset to first file
+    current_filtered_index_ = 0;
+    
+    update_stats();
+    update_progress();
+    if (!filtered_indices_.empty()) {
+        show_current_file();
+    }
+    
+    LOG_INFO("BasicMode", "Progress reset by user");
 }
 
 void StandaloneFileTinderDialog::on_finish() {
@@ -944,6 +1074,14 @@ void StandaloneFileTinderDialog::advance_to_next() {
     }
     if (file_info_label_) {
         file_info_label_->setText("Click 'Finish Review' to execute your decisions.");
+    }
+    if (finish_btn_) {
+        finish_btn_->setStyleSheet(
+            "QPushButton { font-size: 12px; padding: 8px 15px; "
+            "background-color: #2ecc71; border-radius: 4px; color: white; "
+            "border: 2px solid #f1c40f; }"
+            "QPushButton:hover { background-color: #27ae60; }"
+        );
     }
 }
 
@@ -1033,7 +1171,7 @@ QString StandaloneFileTinderDialog::show_folder_picker() {
 void StandaloneFileTinderDialog::show_review_summary() {
     QDialog summary_dialog(this);
     summary_dialog.setWindowTitle("Review Summary");
-    summary_dialog.setMinimumSize(ui::scaling::scaled(700), ui::scaling::scaled(500));
+    summary_dialog.setMinimumSize(ui::scaling::scaled(800), ui::scaling::scaled(550));
     
     auto* layout = new QVBoxLayout(&summary_dialog);
     
@@ -1064,58 +1202,155 @@ void StandaloneFileTinderDialog::show_review_summary() {
     
     layout->addWidget(stats_widget);
     
-    // Move destinations table
-    if (move_count_ > 0) {
-        auto* move_label = new QLabel("Move Destinations:");
-        move_label->setStyleSheet("font-weight: bold; margin-top: 15px;");
-        layout->addWidget(move_label);
+    // Requirement 6 + 22-23: Editable per-file review table with mode column
+    auto* files_label = new QLabel("File Decisions (click Decision to change):");
+    files_label->setStyleSheet("font-weight: bold; margin-top: 10px;");
+    layout->addWidget(files_label);
+    
+    // Bulk action toolbar
+    auto* bulk_bar = new QHBoxLayout();
+    bulk_bar->addWidget(new QLabel("Bulk:"));
+    auto* bulk_keep_btn = new QPushButton("All Keep");
+    bulk_keep_btn->setMaximumWidth(70);
+    bulk_keep_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    bulk_bar->addWidget(bulk_keep_btn);
+    auto* bulk_skip_btn = new QPushButton("All Skip");
+    bulk_skip_btn->setMaximumWidth(70);
+    bulk_skip_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    bulk_bar->addWidget(bulk_skip_btn);
+    auto* bulk_pending_btn = new QPushButton("All Pending");
+    bulk_pending_btn->setMaximumWidth(80);
+    bulk_pending_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    bulk_bar->addWidget(bulk_pending_btn);
+    bulk_bar->addStretch();
+    layout->addLayout(bulk_bar);
+    
+    auto* table = new QTableWidget();
+    table->setColumnCount(4);
+    table->setHorizontalHeaderLabels({"File", "Decision", "Destination", "Mode"});
+    table->horizontalHeader()->setStretchLastSection(true);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    
+    // Determine mode name for this dialog
+    QString mode_name = windowTitle().contains("Advanced") ? "Advanced" : "Basic";
+    
+    // Populate only files with non-pending decisions
+    int visible_row = 0;
+    std::vector<int> row_to_file_idx;
+    for (int i = 0; i < static_cast<int>(files_.size()); ++i) {
+        if (files_[i].decision != "pending") {
+            visible_row++;
+        }
+    }
+    table->setRowCount(visible_row);
+    
+    visible_row = 0;
+    for (int i = 0; i < static_cast<int>(files_.size()); ++i) {
+        const auto& file = files_[i];
+        if (file.decision == "pending") continue;
         
-        auto* table = new QTableWidget();
-        table->setColumnCount(3);
-        table->setHorizontalHeaderLabels({"Destination Folder", "Files", "Size"});
-        table->horizontalHeader()->setStretchLastSection(true);
+        row_to_file_idx.push_back(i);
         
-        // Collect move destinations
-        QMap<QString, QPair<int, qint64>> dest_stats;
-        for (const auto& file : files_) {
-            if (file.decision == "move" && !file.destination_folder.isEmpty()) {
-                auto& stats = dest_stats[file.destination_folder];
-                stats.first++;
-                stats.second += file.size;
+        // File name (read-only)
+        auto* name_item = new QTableWidgetItem(file.name);
+        name_item->setFlags(name_item->flags() & ~Qt::ItemIsEditable);
+        table->setItem(visible_row, 0, name_item);
+        
+        // Decision (editable via combo box)
+        auto* combo = new QComboBox();
+        combo->addItems({"keep", "delete", "skip", "pending"});
+        if (file.decision == "move") {
+            combo->addItem("move");
+        }
+        combo->setCurrentText(file.decision);
+        table->setCellWidget(visible_row, 1, combo);
+        
+        // Destination (dropdown with grid folders + "Other...")
+        auto* dest_combo = new QComboBox();
+        dest_combo->addItem("(none)", QString());
+        dest_combo->addItem("Other...", "__other__");
+        QStringList grid_folders = get_destination_folders();
+        for (const QString& fp : grid_folders) {
+            QString label = QFileInfo(fp).fileName();
+            if (!QDir(fp).exists()) label += " [NEW]";
+            dest_combo->addItem(label, fp);
+        }
+        // Set current destination
+        if (!file.destination_folder.isEmpty()) {
+            int idx_found = dest_combo->findData(file.destination_folder);
+            if (idx_found >= 0) {
+                dest_combo->setCurrentIndex(idx_found);
+            } else {
+                // Not in grid — add it as an entry
+                dest_combo->addItem(QFileInfo(file.destination_folder).fileName(), file.destination_folder);
+                dest_combo->setCurrentIndex(dest_combo->count() - 1);
             }
         }
-        
-        table->setRowCount(dest_stats.size());
-        int row = 0;
-        int new_folder_count = 0;
-        for (auto it = dest_stats.begin(); it != dest_stats.end(); ++it, ++row) {
-            QString folder_display = it.key();
-            // Mark folders that don't exist yet (will be created)
-            if (!QDir(it.key()).exists()) {
-                folder_display = it.key() + "  [NEW]";
-                new_folder_count++;
+        dest_combo->setToolTip(file.destination_folder);
+        // Handle "Other..." selection
+        connect(dest_combo, QOverload<int>::of(&QComboBox::activated), this, [this, dest_combo](int idx) {
+            if (dest_combo->itemData(idx).toString() == "__other__") {
+                QString folder = QFileDialog::getExistingDirectory(this, "Choose Destination", source_folder_);
+                if (!folder.isEmpty()) {
+                    dest_combo->addItem(QFileInfo(folder).fileName(), folder);
+                    dest_combo->setCurrentIndex(dest_combo->count() - 1);
+                } else {
+                    dest_combo->setCurrentIndex(0);  // back to "(none)"
+                }
             }
-            table->setItem(row, 0, new QTableWidgetItem(folder_display));
-            table->setItem(row, 1, new QTableWidgetItem(QString::number(it.value().first)));
-            
-            qint64 size = it.value().second;
-            QString size_str;
-            if (size < 1024) size_str = QString("%1 B").arg(size);
-            else if (size < 1024LL*1024) size_str = QString("%1 KB").arg(size/1024.0, 0, 'f', 1);
-            else size_str = QString("%1 MB").arg(size/(1024.0*1024.0), 0, 'f', 2);
-            table->setItem(row, 2, new QTableWidgetItem(size_str));
-        }
+        });
+        table->setCellWidget(visible_row, 2, dest_combo);
         
-        table->resizeColumnsToContents();
-        layout->addWidget(table);
+        // Mode column (Req 22-23): moves with destinations are from Advanced, others from current mode
+        QString file_mode = (file.decision == "move" && !file.destination_folder.isEmpty())
+                            ? "Advanced" : mode_name;
+        auto* mode_item = new QTableWidgetItem(file_mode);
+        mode_item->setFlags(mode_item->flags() & ~Qt::ItemIsEditable);
+        table->setItem(visible_row, 3, mode_item);
         
-        if (new_folder_count > 0) {
-            auto* new_folders_note = new QLabel(
-                QString("Note: %1 folder(s) marked [NEW] will be created during execution.")
-                    .arg(new_folder_count));
-            new_folders_note->setStyleSheet("color: #f39c12; font-style: italic; margin-top: 4px;");
-            layout->addWidget(new_folders_note);
+        visible_row++;
+    }
+    
+    table->resizeColumnsToContents();
+    table->setColumnWidth(0, qMax(table->columnWidth(0), 200));
+    layout->addWidget(table, 1);
+    
+    // Connect bulk action buttons
+    connect(bulk_keep_btn, &QPushButton::clicked, this, [table]() {
+        for (int r = 0; r < table->rowCount(); ++r) {
+            auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (combo) combo->setCurrentText("keep");
         }
+    });
+    connect(bulk_skip_btn, &QPushButton::clicked, this, [table]() {
+        for (int r = 0; r < table->rowCount(); ++r) {
+            auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (combo) combo->setCurrentText("skip");
+        }
+    });
+    connect(bulk_pending_btn, &QPushButton::clicked, this, [table]() {
+        for (int r = 0; r < table->rowCount(); ++r) {
+            auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (combo) combo->setCurrentText("pending");
+        }
+    });
+    
+    // Folder creation note
+    int new_folder_count = 0;
+    QSet<QString> dest_folders;
+    for (const auto& file : files_) {
+        if (file.decision == "move" && !file.destination_folder.isEmpty()) {
+            dest_folders.insert(file.destination_folder);
+        }
+    }
+    for (const QString& folder : dest_folders) {
+        if (!QDir(folder).exists()) new_folder_count++;
+    }
+    if (new_folder_count > 0) {
+        auto* note = new QLabel(
+            QString("Note: %1 folder(s) will be created during execution.").arg(new_folder_count));
+        note->setStyleSheet("color: #f39c12; font-style: italic;");
+        layout->addWidget(note);
     }
     
     // Buttons
@@ -1133,7 +1368,39 @@ void StandaloneFileTinderDialog::show_review_summary() {
         "padding: 10px 20px; border-radius: 6px; }"
         "QPushButton:hover { background-color: #27ae60; }"
     );
-    connect(execute_btn, &QPushButton::clicked, &summary_dialog, [&]() {
+    connect(execute_btn, &QPushButton::clicked, &summary_dialog, [&, table]() {
+        // Apply any edits from combo boxes back to files_
+        for (int r = 0; r < table->rowCount() && r < static_cast<int>(row_to_file_idx.size()); ++r) {
+            auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (!combo) continue;
+            
+            int file_idx = row_to_file_idx[r];
+            auto& file = files_[file_idx];
+            QString new_decision = combo->currentText();
+            
+            // Read destination from dest combo
+            auto* dest_combo = qobject_cast<QComboBox*>(table->cellWidget(r, 2));
+            QString new_dest;
+            if (dest_combo) {
+                new_dest = dest_combo->currentData().toString();
+                if (new_dest == "__other__") new_dest.clear();
+            }
+            
+            if (new_decision != file.decision || new_dest != file.destination_folder) {
+                update_decision_count(file.decision, -1);
+                if (new_decision != "pending") {
+                    update_decision_count(new_decision, 1);
+                }
+                // If decision is "move" and has a destination, set it
+                if (new_decision == "move" && !new_dest.isEmpty()) {
+                    file.destination_folder = new_dest;
+                } else if (new_decision != "move") {
+                    file.destination_folder.clear();
+                }
+                file.decision = new_decision;
+            }
+        }
+        
         summary_dialog.accept();
         execute_decisions();
     });
@@ -1166,10 +1433,37 @@ void StandaloneFileTinderDialog::execute_decisions() {
         }
     }
     
+    // Requirement 20: Verify we can create virtual folders before proceeding
+    QSet<QString> failed_folders;
+    for (const QString& folder : plan.folders_to_create) {
+        if (!QDir().mkpath(folder)) {
+            failed_folders.insert(folder);
+            auto reply = QMessageBox::warning(this, "Folder Creation Failed",
+                QString("Could not create folder:\n%1\n\n"
+                        "Files assigned to this folder will be skipped.\n"
+                        "Continue with remaining operations?").arg(folder),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (reply != QMessageBox::Yes) return;
+        }
+    }
+    // Clear the create list since we handled it above
+    plan.folders_to_create.clear();
+    
+    // Remove moves targeting failed folders
+    if (!failed_folders.isEmpty()) {
+        plan.files_to_move.erase(
+            std::remove_if(plan.files_to_move.begin(), plan.files_to_move.end(),
+                [&](const auto& pair) { return failed_folders.contains(pair.second); }),
+            plan.files_to_move.end());
+    }
+    
     // Progress dialog
     QProgressDialog progress("Executing decisions...", "Cancel", 0, 100, this);
     progress.setWindowModality(Qt::WindowModal);
     progress.show();
+    
+    QElapsedTimer timer;
+    timer.start();
     
     FileTinderExecutor executor;
     auto result = executor.execute(plan, [&](int current, int total, const QString& msg) {
@@ -1180,29 +1474,175 @@ void StandaloneFileTinderDialog::execute_decisions() {
         QApplication::processEvents();
     });
     
+    qint64 elapsed_ms = timer.elapsed();
     progress.close();
     
-    // Show result
-    QString message = QString(
-        "Execution complete!\n\n"
-        "Files deleted: %1\n"
-        "Files moved: %2\n"
-        "Folders created: %3\n"
-        "Errors: %4"
-    ).arg(result.files_deleted).arg(result.files_moved)
-     .arg(result.folders_created).arg(result.errors);
-    
-    if (!result.error_messages.isEmpty()) {
-        message += "\n\nErrors:\n" + result.error_messages.join("\n");
+    // Save execution log to database for undo support
+    for (const auto& entry : result.log) {
+        if (entry.success) {
+            db_.save_execution_log(source_folder_, entry.action, entry.source_path, entry.dest_path);
+        }
     }
     
-    QMessageBox::information(this, "Execution Complete", message);
+    // Show execution results dialog with undo + stats
+    show_execution_results(result, elapsed_ms);
     
-    // Clear session
+    // Clear session decisions (but execution log persists for undo)
     db_.clear_session(source_folder_);
     
     emit session_completed();
     accept();
+}
+
+void StandaloneFileTinderDialog::show_execution_results(const ExecutionResult& result, qint64 elapsed_ms) {
+    QDialog results_dialog(this);
+    results_dialog.setWindowTitle("Execution Complete");
+    results_dialog.setMinimumSize(ui::scaling::scaled(700), ui::scaling::scaled(500));
+    
+    auto* layout = new QVBoxLayout(&results_dialog);
+    
+    // Session statistics (Req 9)
+    auto* stats_group = new QGroupBox("Session Statistics");
+    stats_group->setStyleSheet("QGroupBox { font-weight: bold; }");
+    auto* stats_layout = new QVBoxLayout(stats_group);
+    
+    int total_files = static_cast<int>(files_.size());
+    int total_reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    double elapsed_sec = elapsed_ms / 1000.0;
+    double files_per_min = elapsed_sec > 0 ? (total_reviewed / elapsed_sec * 60.0) : 0;
+    
+    auto* stats_text = new QLabel(QString(
+        "Total files scanned: %1\n"
+        "Files reviewed: %2\n"
+        "  • Kept: %3\n"
+        "  • Deleted: %4\n"
+        "  • Skipped: %5\n"
+        "  • Moved: %6\n\n"
+        "Execution time: %7s\n"
+        "Files moved: %8 | Files deleted: %9 | Errors: %10"
+    ).arg(total_files).arg(total_reviewed)
+     .arg(keep_count_).arg(delete_count_).arg(skip_count_).arg(move_count_)
+     .arg(elapsed_sec, 0, 'f', 1)
+     .arg(result.files_moved).arg(result.files_deleted).arg(result.errors));
+    stats_text->setStyleSheet("font-size: 12px; padding: 8px;");
+    stats_layout->addWidget(stats_text);
+    
+    if (files_per_min > 0) {
+        auto* pace_label = new QLabel(QString("Review pace: ~%1 files/minute")
+            .arg(files_per_min, 0, 'f', 1));
+        pace_label->setStyleSheet("color: #3498db; font-style: italic;");
+        stats_layout->addWidget(pace_label);
+    }
+    
+    layout->addWidget(stats_group);
+    
+    if (!result.error_messages.isEmpty()) {
+        auto* errors_label = new QLabel("Errors:\n" + result.error_messages.join("\n"));
+        errors_label->setStyleSheet("color: #e74c3c; font-size: 11px; padding: 4px;");
+        errors_label->setWordWrap(true);
+        layout->addWidget(errors_label);
+    }
+    
+    // Execution log with undo (Req 8)
+    auto successful_entries = result.log;
+    successful_entries.erase(
+        std::remove_if(successful_entries.begin(), successful_entries.end(),
+            [](const ExecutionLogEntry& e) { return !e.success; }),
+        successful_entries.end());
+    
+    if (!successful_entries.empty()) {
+        auto* log_label = new QLabel(QString("Execution Log (%1 actions — click Undo to reverse):")
+            .arg(successful_entries.size()));
+        log_label->setStyleSheet("font-weight: bold; margin-top: 8px;");
+        layout->addWidget(log_label);
+        
+        auto* table = new QTableWidget();
+        table->setColumnCount(4);
+        table->setHorizontalHeaderLabels({"Action", "File", "Destination", "Undo"});
+        table->horizontalHeader()->setStretchLastSection(true);
+        table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table->setRowCount(static_cast<int>(successful_entries.size()));
+        
+        for (int i = 0; i < static_cast<int>(successful_entries.size()); ++i) {
+            const auto& entry = successful_entries[i];
+            
+            auto* action_item = new QTableWidgetItem(entry.action);
+            action_item->setFlags(action_item->flags() & ~Qt::ItemIsEditable);
+            table->setItem(i, 0, action_item);
+            
+            auto* file_item = new QTableWidgetItem(QFileInfo(entry.source_path).fileName());
+            file_item->setFlags(file_item->flags() & ~Qt::ItemIsEditable);
+            file_item->setToolTip(entry.source_path);
+            table->setItem(i, 1, file_item);
+            
+            QString dest_display;
+            if (!entry.dest_path.isEmpty()) {
+                dest_display = entry.action == "delete" ? "(trash)" : QFileInfo(entry.dest_path).fileName();
+            } else if (entry.action == "delete") {
+                dest_display = "(permanent)";
+            }
+            auto* dest_item = new QTableWidgetItem(dest_display);
+            dest_item->setFlags(dest_item->flags() & ~Qt::ItemIsEditable);
+            dest_item->setToolTip(entry.dest_path);
+            table->setItem(i, 2, dest_item);
+            
+            auto* undo_btn = new QPushButton("Undo");
+            undo_btn->setStyleSheet(
+                "QPushButton { background-color: #e67e22; color: white; padding: 2px 8px; border-radius: 3px; }"
+                "QPushButton:hover { background-color: #d35400; }"
+                "QPushButton:disabled { background-color: #7f8c8d; color: #bdc3c7; }"
+            );
+            // Disable undo for permanently deleted files (no trash path)
+            if (entry.action == "delete" && entry.dest_path.isEmpty()) {
+                undo_btn->setEnabled(false);
+                undo_btn->setText("Permanent");
+                undo_btn->setToolTip("File was permanently deleted — cannot undo");
+            }
+            connect(undo_btn, &QPushButton::clicked, this, [this, entry, undo_btn, action_item]() {
+                if (FileTinderExecutor::undo_action(entry)) {
+                    undo_btn->setEnabled(false);
+                    undo_btn->setText("Done ✓");
+                    action_item->setText(entry.action + " (undone)");
+                    
+                    // Remove from database log
+                    auto log_entries = db_.get_execution_log(source_folder_);
+                    for (const auto& [id, action, src, dst, ts] : log_entries) {
+                        if (src == entry.source_path && action == entry.action) {
+                            db_.remove_execution_log_entry(id);
+                            break;
+                        }
+                    }
+                    
+                    LOG_INFO("Execution", QString("Undone: %1 %2").arg(entry.action, entry.source_path));
+                } else {
+                    QMessageBox::warning(undo_btn->parentWidget(), "Undo Failed",
+                        QString("Could not undo this action.\nThe file may have been modified or removed."));
+                }
+            });
+            table->setCellWidget(i, 3, undo_btn);
+        }
+        
+        table->resizeColumnsToContents();
+        table->setColumnWidth(1, qMax(table->columnWidth(1), 200));
+        layout->addWidget(table, 1);
+    }
+    
+    // Close button
+    auto* btn_layout = new QHBoxLayout();
+    btn_layout->addStretch();
+    
+    auto* close_btn = new QPushButton("Close");
+    close_btn->setStyleSheet(
+        "QPushButton { background-color: #27ae60; color: white; font-weight: bold; "
+        "padding: 10px 25px; border-radius: 6px; }"
+        "QPushButton:hover { background-color: #2ecc71; }"
+    );
+    connect(close_btn, &QPushButton::clicked, &results_dialog, &QDialog::accept);
+    btn_layout->addWidget(close_btn);
+    
+    layout->addLayout(btn_layout);
+    
+    results_dialog.exec();
 }
 
 void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
@@ -1217,8 +1657,10 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
             on_skip();
             break;
         case Qt::Key_Up:
+            // Up arrow is no longer Back — use Z for Undo instead
+            break;
         case Qt::Key_Backspace:
-            on_back();
+            on_undo();
             break;
         case Qt::Key_Z:
             // Undo last action
@@ -1301,10 +1743,25 @@ void StandaloneFileTinderDialog::reject() {
 }
 
 bool StandaloneFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
-    if (obj == preview_label_ && event->type() == QEvent::MouseButtonDblClick) {
+    if (obj == file_info_label_ && event->type() == QEvent::MouseButtonDblClick) {
         int file_idx = get_current_file_index();
         if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
+        }
+        return true;
+    }
+    if (obj == file_info_label_ && event->type() == QEvent::ContextMenu) {
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            QMenu menu;
+            QString folder = QFileInfo(files_[file_idx].path).absolutePath();
+            menu.addAction("Open Containing Folder", [folder]() {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+            });
+            menu.addAction("Open File", [this, file_idx]() {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
+            });
+            menu.exec(QCursor::pos());
         }
         return true;
     }
@@ -1429,14 +1886,52 @@ void StandaloneFileTinderDialog::on_filter_changed(int index) {
 
 void StandaloneFileTinderDialog::apply_filter(FileFilterType filter) {
     current_filter_ = filter;
+    
+    // Prompt user about resetting progress when filter changes
+    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    if (reviewed > 0) {
+        auto reply = QMessageBox::question(this, "Filter Changed",
+            QString("You have %1 decisions made. Do you want to reset progress and start fresh with this filter?\n\n"
+                    "• Yes — clear all decisions\n"
+                    "• No — keep existing decisions").arg(reviewed),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            // Reset all decisions to pending
+            for (auto& file : files_) {
+                file.decision = "pending";
+                file.destination_folder.clear();
+            }
+            keep_count_ = 0;
+            delete_count_ = 0;
+            skip_count_ = 0;
+            move_count_ = 0;
+            undo_stack_.clear();
+            if (undo_btn_) undo_btn_->setEnabled(false);
+            db_.clear_session(source_folder_);
+        }
+    }
+    
     rebuild_filtered_indices();
     
-    // Find first pending file in new filter
-    current_filtered_index_ = 0;
-    for (size_t i = 0; i < filtered_indices_.size(); ++i) {
-        if (files_[filtered_indices_[i]].decision == "pending") {
-            current_filtered_index_ = static_cast<int>(i);
-            break;
+    // Stay on current file if it matches the new filter, otherwise find first pending
+    int prev_file_idx = get_current_file_index();
+    bool found_current = false;
+    if (prev_file_idx >= 0) {
+        for (size_t i = 0; i < filtered_indices_.size(); ++i) {
+            if (filtered_indices_[i] == prev_file_idx) {
+                current_filtered_index_ = static_cast<int>(i);
+                found_current = true;
+                break;
+            }
+        }
+    }
+    if (!found_current) {
+        current_filtered_index_ = 0;
+        for (size_t i = 0; i < filtered_indices_.size(); ++i) {
+            if (files_[filtered_indices_[i]].decision == "pending") {
+                current_filtered_index_ = static_cast<int>(i);
+                break;
+            }
         }
     }
     
@@ -1523,6 +2018,8 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
 void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     if (!preview_label_) return;
     
+    animating_ = true;
+    
     // Reuse existing effect or create new one
     auto* effect = qobject_cast<QGraphicsOpacityEffect*>(preview_label_->graphicsEffect());
     if (!effect) {
@@ -1530,13 +2027,19 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         preview_label_->setGraphicsEffect(effect);
     }
     
-    // Stop any existing animation - deletion is handled by DeleteWhenStopped from previous start()
+    // If animation is running, stop it and reset opacity
     if (swipe_animation_) {
-        swipe_animation_->stop();
+        if (swipe_animation_->state() == QAbstractAnimation::Running) {
+            swipe_animation_->stop();  // triggers DeleteWhenStopped
+            effect->setOpacity(1.0);
+        } else {
+            // Animation exists but not running (finished handler may not have fired yet)
+            delete swipe_animation_;
+        }
         swipe_animation_ = nullptr;
     }
     
-    // Create new animation with 'this' as parent for backup cleanup on dialog destruction
+    // Create new animation owned by 'this' for safe lifetime
     swipe_animation_ = new QPropertyAnimation(effect, "opacity", this);
     swipe_animation_->setDuration(150);
     
@@ -1550,16 +2053,24 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     
     swipe_animation_->setEasingCurve(QEasingCurve::OutQuad);
     
-    // Use QPointer to safely access effect in callback - will be null if effect was deleted
+    // Use QPointer to safely access effect in callback
     QPointer<QGraphicsOpacityEffect> weak_effect = effect;
-    connect(swipe_animation_, &QPropertyAnimation::finished, this, [weak_effect]() {
+    QPointer<StandaloneFileTinderDialog> weak_this = this;
+    connect(swipe_animation_, &QPropertyAnimation::finished, this, [weak_effect, weak_this]() {
         if (weak_effect) {
             weak_effect->setOpacity(1.0);
         }
+        if (weak_this) {
+            weak_this->swipe_animation_ = nullptr;
+            weak_this->animating_ = false;
+        }
     });
     
-    // DeleteWhenStopped handles cleanup when animation finishes or is stopped
     swipe_animation_->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+QStringList StandaloneFileTinderDialog::get_destination_folders() const {
+    return {};  // Base class has no grid folders
 }
 
 // Shortcuts help dialog
@@ -1580,18 +2091,31 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <tr><td><span class='key'>→</span> Right Arrow</td><td>Keep file in original location</td></tr>
 <tr><td><span class='key'>←</span> Left Arrow</td><td>Mark file for deletion</td></tr>
 <tr><td><span class='key'>↓</span> Down Arrow</td><td>Skip file (no action)</td></tr>
-<tr><td><span class='key'>↑</span> Up Arrow</td><td>Go back to previous file</td></tr>
-<tr><td><span class='key'>Z</span></td><td>Undo last action</td></tr>
-<tr><td><span class='key'>P</span></td><td>Open image preview in separate window</td></tr>
+<tr><td><span class='key'>Z</span> or <span class='key'>Backspace</span></td><td>Undo last action</td></tr>
+<tr><td><span class='key'>P</span></td><td>Toggle file preview</td></tr>
 <tr><td><span class='key'>Enter</span></td><td>Finish review and execute</td></tr>
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
 <tr><td><span class='key'>Esc</span></td><td>Close dialog</td></tr>
 </table>
 <br>
-<b>Tip:</b> Use the filter dropdown to filter by file type (Images, Videos, etc.) or specify custom extensions.
+<b>Tip:</b> Use the search box to jump to a file by name. Right-click file name for more options.
 )";
     
     help_dialog.setTextFormat(Qt::RichText);
     help_dialog.setText(shortcuts);
     help_dialog.exec();
+}
+
+void StandaloneFileTinderDialog::on_search(const QString& text) {
+    if (text.isEmpty()) return;
+    
+    // Find file matching search text in filtered list
+    for (int i = 0; i < static_cast<int>(filtered_indices_.size()); ++i) {
+        const auto& file = files_[filtered_indices_[i]];
+        if (file.name.contains(text, Qt::CaseInsensitive)) {
+            current_filtered_index_ = i;
+            show_current_file();
+            return;
+        }
+    }
 }

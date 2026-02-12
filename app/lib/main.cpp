@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QComboBox>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QStyleFactory>
 #include <QDir>
@@ -13,10 +14,18 @@
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QFileInfo>
+#include <QMouseEvent>
+#include <QTimer>
+#include <QMimeDatabase>
+#include <QProgressDialog>
 
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
 #include "AdvancedFileTinderDialog.hpp"
+#include "FileTinderExecutor.hpp"
 #include "AppLogger.hpp"
 #include "DiagnosticTool.hpp"
 #include "ui_constants.hpp"
@@ -64,6 +73,25 @@ private:
     DatabaseManager db_manager_;
     QString chosen_path_;
     QLabel* path_indicator_;
+    QListWidget* recent_list_ = nullptr;
+    bool skip_stats_on_next_launch_ = false;  // Skip stats dashboard on mode switch
+    
+    bool eventFilter(QObject* obj, QEvent* event) override {
+        if (recent_list_ && obj == recent_list_->viewport() && event->type() == QEvent::MouseButtonPress) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::MiddleButton) {
+                auto* item = recent_list_->itemAt(me->pos());
+                if (item) {
+                    QString path = item->text();
+                    delete recent_list_->takeItem(recent_list_->row(item));
+                    db_manager_.remove_recent_folder(path);
+                    LOG_INFO("Launcher", QString("Removed recent folder: %1").arg(path));
+                    return true;
+                }
+            }
+        }
+        return QDialog::eventFilter(obj, event);
+    }
     
     void build_interface() {
         auto* root_layout = new QVBoxLayout(this);
@@ -107,35 +135,45 @@ private:
         
         root_layout->addLayout(picker_row);
         
-        // Recent folders combo
+        // Recent folders list (middle-click to remove)
         QStringList recent = db_manager_.get_recent_folders(5);
         if (!recent.isEmpty()) {
-            auto* recent_combo = new QComboBox();
-            recent_combo->addItem("Recent folders...");
-            for (const QString& folder : recent) {
-                recent_combo->addItem(folder);
-            }
-            recent_combo->setStyleSheet(
-                "QComboBox { padding: 4px 8px; background-color: #2d2d2d; border: 1px solid #404040; color: #aaaaaa; }"
+            auto* recent_label = new QLabel("Recent folders (click to select, middle-click to remove):");
+            recent_label->setStyleSheet("color: #888888; font-size: 10px;");
+            root_layout->addWidget(recent_label);
+            
+            auto* recent_list = new QListWidget();
+            recent_list->setMaximumHeight(ui::scaling::scaled(80));
+            recent_list->setStyleSheet(
+                "QListWidget { background-color: #2d2d2d; border: 1px solid #404040; color: #aaaaaa; }"
+                "QListWidget::item { padding: 3px 8px; }"
+                "QListWidget::item:hover { background-color: #3a3a3a; }"
+                "QListWidget::item:selected { background-color: #0078d4; color: white; }"
             );
-            connect(recent_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, 
-                    [this, recent_combo](int index) {
-                if (index > 0) {
-                    QString path = recent_combo->itemText(index);
-                    if (QDir(path).exists()) {
-                        chosen_path_ = path;
-                        path_indicator_->setText(path);
-                        path_indicator_->setStyleSheet(
-                            "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
-                        );
-                    } else {
-                        QMessageBox::warning(this, "Folder Not Found", 
-                            QString("The folder no longer exists:\n%1").arg(path));
-                    }
-                    recent_combo->setCurrentIndex(0);
+            for (const QString& folder : recent) {
+                recent_list->addItem(folder);
+            }
+            
+            connect(recent_list, &QListWidget::itemClicked, this,
+                    [this, recent_list](QListWidgetItem* item) {
+                QString path = item->text();
+                if (QDir(path).exists()) {
+                    chosen_path_ = path;
+                    path_indicator_->setText(path);
+                    path_indicator_->setStyleSheet(
+                        "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
+                    );
+                } else {
+                    QMessageBox::warning(this, "Folder Not Found",
+                        QString("The folder no longer exists:\n%1").arg(path));
                 }
+                recent_list->clearSelection();
             });
-            root_layout->addWidget(recent_combo);
+            
+            // Middle-click to remove
+            recent_list->viewport()->installEventFilter(this);
+            recent_list_ = recent_list;
+            root_layout->addWidget(recent_list);
         }
         
         root_layout->addStretch();
@@ -168,7 +206,7 @@ private:
         
         root_layout->addLayout(modes_row);
         
-        // Tools row: Clear Session + Diagnostics
+        // Tools row: Clear Session + Undo History + Diagnostics
         auto* tools_row = new QHBoxLayout();
         
         auto* clear_btn = new QPushButton("Clear Session");
@@ -178,6 +216,14 @@ private:
         );
         connect(clear_btn, &QPushButton::clicked, this, &FileTinderLauncher::clear_session);
         tools_row->addWidget(clear_btn);
+        
+        auto* undo_history_btn = new QPushButton("Undo History");
+        undo_history_btn->setStyleSheet(
+            "QPushButton { padding: 6px 12px; background-color: #4a4a4a; color: #cccccc; border: 1px solid #555555; }"
+            "QPushButton:hover { background-color: #555555; }"
+        );
+        connect(undo_history_btn, &QPushButton::clicked, this, &FileTinderLauncher::show_undo_history);
+        tools_row->addWidget(undo_history_btn);
         
         tools_row->addStretch();
         
@@ -192,9 +238,10 @@ private:
         root_layout->addLayout(tools_row);
         
         // Hotkey hint
-        auto* hint_text = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | Z=Undo");
+        auto* hint_text = new QLabel("Keys: Left=Delete | Down=Skip | Up=Back | Z=Undo | Basic: Right=Keep | Advanced: K=Keep, 1-0=Quick Access");
         hint_text->setStyleSheet("color: #666666; font-size: 10px; padding-top: 8px;");
         hint_text->setAlignment(Qt::AlignCenter);
+        hint_text->setWordWrap(true);
         root_layout->addWidget(hint_text);
     }
     
@@ -208,6 +255,117 @@ private:
             );
             LOG_INFO("Launcher", QString("Folder selected: %1").arg(path));
         }
+    }
+    
+    bool show_pre_session_stats() {
+        QDir dir(chosen_path_);
+        QStringList files = dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
+        
+        if (files.isEmpty()) {
+            QMessageBox::information(this, "Empty Folder", "This folder has no files to sort.");
+            return false;
+        }
+        
+        // Collect stats (show progress for large dirs)
+        qint64 total_size = 0;
+        int img_count = 0, vid_count = 0, aud_count = 0, doc_count = 0, arch_count = 0, other_count = 0;
+        QMimeDatabase mime_db;
+        
+        QProgressDialog* progress = nullptr;
+        if (files.size() > 200) {
+            progress = new QProgressDialog("Analyzing files...", QString(), 0, files.size(), this);
+            progress->setWindowModality(Qt::WindowModal);
+            progress->setMinimumDuration(0);
+            progress->show();
+        }
+        
+        for (int i = 0; i < files.size(); ++i) {
+            const QString& file = files[i];
+            QFileInfo info(dir.absoluteFilePath(file));
+            total_size += info.size();
+            QString mime = mime_db.mimeTypeForFile(info.absoluteFilePath()).name();
+            if (mime.startsWith("image/")) img_count++;
+            else if (mime.startsWith("video/")) vid_count++;
+            else if (mime.startsWith("audio/")) aud_count++;
+            else if (mime.startsWith("text/") || mime.contains("pdf") || mime.contains("document")) doc_count++;
+            else if (mime.contains("zip") || mime.contains("archive") || mime.contains("compressed")) arch_count++;
+            else other_count++;
+            
+            if (progress && (i % 50 == 0)) {
+                progress->setValue(i);
+                QApplication::processEvents();
+            }
+        }
+        delete progress;
+        
+        // Format size
+        QString size_str;
+        if (total_size < 1024LL) size_str = QString("%1 B").arg(total_size);
+        else if (total_size < 1024LL*1024) size_str = QString("%1 KB").arg(total_size/1024.0, 0, 'f', 1);
+        else if (total_size < 1024LL*1024*1024) size_str = QString("%1 MB").arg(total_size/(1024.0*1024.0), 0, 'f', 1);
+        else size_str = QString("%1 GB").arg(total_size/(1024.0*1024.0*1024.0), 0, 'f', 2);
+        
+        // Show dashboard
+        QDialog dashboard(this);
+        dashboard.setWindowTitle("Session Overview");
+        dashboard.setMinimumSize(ui::scaling::scaled(450), ui::scaling::scaled(350));
+        
+        auto* layout = new QVBoxLayout(&dashboard);
+        
+        auto* header = new QLabel(chosen_path_);
+        header->setStyleSheet("font-size: 13px; font-weight: bold; color: #3498db;");
+        header->setWordWrap(true);
+        layout->addWidget(header);
+        
+        auto* summary = new QLabel(QString(
+            "<div style='font-size: 14px; margin: 10px 0;'>"
+            "<b>%1 files</b> &middot; %2 total"
+            "</div>"
+        ).arg(files.size()).arg(size_str));
+        layout->addWidget(summary);
+        
+        // Type breakdown
+        auto* breakdown = new QWidget();
+        breakdown->setStyleSheet("background-color: #34495e; border-radius: 8px; padding: 12px;");
+        auto* bd_layout = new QVBoxLayout(breakdown);
+        
+        auto add_row = [&](const QString& label, int count, const QString& color) {
+            if (count == 0) return;
+            auto* row = new QLabel(QString(
+                "<span style='color: %2; font-size: 13px;'>%1: <b>%3</b></span>"
+            ).arg(label, color).arg(count));
+            bd_layout->addWidget(row);
+        };
+        
+        add_row("Images", img_count, "#3498db");
+        add_row("Videos", vid_count, "#e74c3c");
+        add_row("Audio", aud_count, "#9b59b6");
+        add_row("Documents", doc_count, "#2ecc71");
+        add_row("Archives", arch_count, "#f39c12");
+        add_row("Other", other_count, "#95a5a6");
+        
+        layout->addWidget(breakdown);
+        layout->addStretch();
+        
+        auto* btn_layout = new QHBoxLayout();
+        auto* cancel_btn = new QPushButton("Cancel");
+        connect(cancel_btn, &QPushButton::clicked, &dashboard, &QDialog::reject);
+        btn_layout->addWidget(cancel_btn);
+        
+        btn_layout->addStretch();
+        
+        auto* start_btn = new QPushButton("Start Sorting");
+        start_btn->setStyleSheet(
+            "QPushButton { padding: 10px 25px; background-color: #27ae60; "
+            "color: white; font-weight: bold; border-radius: 6px; }"
+            "QPushButton:hover { background-color: #2ecc71; }"
+        );
+        connect(start_btn, &QPushButton::clicked, &dashboard, &QDialog::accept);
+        btn_layout->addWidget(start_btn);
+        
+        layout->addLayout(btn_layout);
+        
+        return dashboard.exec() == QDialog::Accepted;
     }
     
     bool validate_folder() {
@@ -227,17 +385,24 @@ private:
     
     void launch_basic() {
         if (!validate_folder()) return;
+        // Skip stats dashboard on mode switch (already shown once)
+        if (skip_stats_on_next_launch_) {
+            skip_stats_on_next_launch_ = false;
+        } else {
+            if (!show_pre_session_stats()) return;
+        }
         
         LOG_INFO("Launcher", "Starting basic mode");
         
         auto* dlg = new StandaloneFileTinderDialog(chosen_path_, db_manager_, this);
         
         connect(dlg, &StandaloneFileTinderDialog::switch_to_advanced_mode, this, [this, dlg]() {
-            dlg->close();
-            launch_advanced();
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            // Defer mode switch to break recursive exec() chain
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_advanced);
         });
         
-        // Initialize first (builds UI, scans files, sets size), then exec() shows and runs event loop
         dlg->initialize();
         dlg->exec();
         dlg->deleteLater();
@@ -245,17 +410,24 @@ private:
     
     void launch_advanced() {
         if (!validate_folder()) return;
+        // Skip stats dashboard on mode switch (already shown once)
+        if (skip_stats_on_next_launch_) {
+            skip_stats_on_next_launch_ = false;
+        } else {
+            if (!show_pre_session_stats()) return;
+        }
         
         LOG_INFO("Launcher", "Starting advanced mode");
         
         auto* dlg = new AdvancedFileTinderDialog(chosen_path_, db_manager_, this);
         
         connect(dlg, &AdvancedFileTinderDialog::switch_to_basic_mode, this, [this, dlg]() {
-            dlg->close();
-            launch_basic();
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            // Defer mode switch to break recursive exec() chain
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_basic);
         });
         
-        // Initialize first (builds UI, scans files, sets size), then exec() shows and runs event loop
         dlg->initialize();
         dlg->exec();
         dlg->deleteLater();
@@ -282,6 +454,128 @@ private:
             LOG_INFO("Launcher", QString("Session cleared for: %1").arg(chosen_path_));
             QMessageBox::information(this, "Session Cleared", "Saved progress has been cleared.");
         }
+    }
+    
+    void show_undo_history() {
+        if (chosen_path_.isEmpty()) {
+            QMessageBox::information(this, "No Folder", "Select a folder first to view its undo history.");
+            return;
+        }
+        
+        auto log_entries = db_manager_.get_execution_log(chosen_path_);
+        
+        if (log_entries.empty()) {
+            QMessageBox::information(this, "No History", "No executed actions to undo for this folder.");
+            return;
+        }
+        
+        QDialog dialog(this);
+        dialog.setWindowTitle("Undo History");
+        dialog.setMinimumSize(600, 400);
+        
+        auto* layout = new QVBoxLayout(&dialog);
+        
+        auto* info_label = new QLabel(QString("Executed actions for: %1\nClick Undo to reverse an action.")
+            .arg(chosen_path_));
+        info_label->setWordWrap(true);
+        layout->addWidget(info_label);
+        
+        auto* table = new QTableWidget();
+        table->setColumnCount(5);
+        table->setHorizontalHeaderLabels({"Action", "File", "Destination", "Time", "Undo"});
+        table->horizontalHeader()->setStretchLastSection(true);
+        table->setSelectionBehavior(QAbstractItemView::SelectRows);
+        table->setRowCount(static_cast<int>(log_entries.size()));
+        
+        for (int i = 0; i < static_cast<int>(log_entries.size()); ++i) {
+            const auto& [id, action, src, dst, ts] = log_entries[i];
+            
+            auto* action_item = new QTableWidgetItem(action);
+            action_item->setFlags(action_item->flags() & ~Qt::ItemIsEditable);
+            table->setItem(i, 0, action_item);
+            
+            auto* file_item = new QTableWidgetItem(QFileInfo(src).fileName());
+            file_item->setFlags(file_item->flags() & ~Qt::ItemIsEditable);
+            file_item->setToolTip(src);
+            table->setItem(i, 1, file_item);
+            
+            QString dest_display;
+            if (action == "delete") {
+                dest_display = dst.isEmpty() ? "(permanent)" : "(trash)";
+            } else {
+                dest_display = QFileInfo(dst).fileName();
+            }
+            auto* dest_item = new QTableWidgetItem(dest_display);
+            dest_item->setFlags(dest_item->flags() & ~Qt::ItemIsEditable);
+            dest_item->setToolTip(dst);
+            table->setItem(i, 2, dest_item);
+            
+            auto* time_item = new QTableWidgetItem(ts);
+            time_item->setFlags(time_item->flags() & ~Qt::ItemIsEditable);
+            table->setItem(i, 3, time_item);
+            
+            auto* undo_btn = new QPushButton("Undo");
+            undo_btn->setStyleSheet(
+                "QPushButton { background-color: #e67e22; color: white; padding: 2px 8px; border-radius: 3px; }"
+                "QPushButton:hover { background-color: #d35400; }"
+                "QPushButton:disabled { background-color: #7f8c8d; color: #bdc3c7; }"
+            );
+            // Disable undo for permanently deleted files (no trash path)
+            if (action == "delete" && dst.isEmpty()) {
+                undo_btn->setEnabled(false);
+                undo_btn->setText("Permanent");
+                undo_btn->setToolTip("File was permanently deleted — cannot undo");
+            }
+            connect(undo_btn, &QPushButton::clicked, this, [this, id, action, src, dst, undo_btn, action_item]() {
+                ExecutionLogEntry entry;
+                entry.action = action;
+                entry.source_path = src;
+                entry.dest_path = dst;
+                entry.success = true;
+                
+                if (FileTinderExecutor::undo_action(entry)) {
+                    undo_btn->setEnabled(false);
+                    undo_btn->setText("Done ✓");
+                    action_item->setText(action + " (undone)");
+                    db_manager_.remove_execution_log_entry(id);
+                    LOG_INFO("UndoHistory", QString("Undone: %1 %2").arg(action, src));
+                } else {
+                    QMessageBox::warning(this, "Undo Failed",
+                        "Could not undo this action.\nThe file may have been modified or removed.");
+                }
+            });
+            table->setCellWidget(i, 4, undo_btn);
+        }
+        
+        table->resizeColumnsToContents();
+        layout->addWidget(table, 1);
+        
+        auto* btn_layout = new QHBoxLayout();
+        btn_layout->addStretch();
+        
+        auto* clear_log_btn = new QPushButton("Clear History");
+        clear_log_btn->setStyleSheet(
+            "QPushButton { padding: 6px 12px; background-color: #e74c3c; color: white; border-radius: 3px; }"
+            "QPushButton:hover { background-color: #c0392b; }"
+        );
+        connect(clear_log_btn, &QPushButton::clicked, this, [this, &dialog]() {
+            auto reply = QMessageBox::question(this, "Clear History",
+                "This will remove all undo history. You won't be able to reverse past actions.\n\nProceed?",
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+            if (reply == QMessageBox::Yes) {
+                db_manager_.clear_execution_log(chosen_path_);
+                dialog.accept();
+            }
+        });
+        btn_layout->addWidget(clear_log_btn);
+        
+        auto* close_btn = new QPushButton("Close");
+        connect(close_btn, &QPushButton::clicked, &dialog, &QDialog::accept);
+        btn_layout->addWidget(close_btn);
+        
+        layout->addLayout(btn_layout);
+        
+        dialog.exec();
     }
 };
 

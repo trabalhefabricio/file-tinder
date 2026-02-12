@@ -3,20 +3,21 @@
 
 #include <QWidget>
 #include <QScrollArea>
-#include <QVBoxLayout>
+#include <QGridLayout>
 #include <QPushButton>
 #include <QMap>
 #include <QString>
+#include <QPoint>
 
 class FolderTreeModel;
 class FolderNode;
 
-// Lightweight folder button used in the mind map list
+// Folder cell used in the mind map grid
 class FolderButton : public QPushButton {
     Q_OBJECT
 
 public:
-    FolderButton(FolderNode* node, int depth, QWidget* parent = nullptr);
+    FolderButton(FolderNode* node, QWidget* parent = nullptr);
     
     FolderNode* node() const { return node_; }
     void set_selected(bool selected);
@@ -25,19 +26,22 @@ public:
 signals:
     void folder_clicked(const QString& path);
     void folder_right_clicked(const QString& path, const QPoint& global_pos);
+    void drag_started(const QString& path);
     
 protected:
     void contextMenuEvent(QContextMenuEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
     
 private:
     FolderNode* node_;
-    int depth_;
     bool is_selected_;
+    QPoint drag_start_pos_;
     
     void update_style();
 };
 
-// Lightweight mind map view using native widgets instead of QGraphicsView
+// Grid-based mind map view for folder destinations
 class MindMapView : public QWidget {
     Q_OBJECT
 
@@ -59,16 +63,30 @@ signals:
     void add_folder_requested();
     void add_subfolder_requested(const QString& parent_path);
     
+protected:
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+    
 private:
     QScrollArea* scroll_area_;
     QWidget* content_widget_;
-    QVBoxLayout* content_layout_;
+    QGridLayout* grid_layout_;
     FolderTreeModel* model_;
     QMap<QString, FolderButton*> buttons_;
     QPushButton* add_button_;
     
-    void build_folder_list();
-    void add_folder_node(FolderNode* node, int depth);
+    // Grid position tracking: maps folder path to (row, col)
+    QMap<QString, QPair<int, int>> grid_positions_;
+    int next_row_;
+    int next_col_;
+    int max_rows_per_col_ = 6;  // Configurable items per column before wrapping
+    
+    void build_grid();
+    void place_folder_node(FolderNode* node);
+    
+public:
+    void set_max_rows_per_col(int rows) { max_rows_per_col_ = qMax(1, rows); }
+    int max_rows_per_col() const { return max_rows_per_col_; }
 };
 
 #endif // MIND_MAP_VIEW_HPP

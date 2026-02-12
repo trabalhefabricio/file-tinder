@@ -90,6 +90,17 @@ bool DatabaseManager::create_tables() {
         )
     )";
     
+    // Grid configurations
+    queries << R"(
+        CREATE TABLE IF NOT EXISTS grid_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            config_name TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            sort_order INTEGER NOT NULL
+        )
+    )";
+    
     for (const QString& query : queries) {
         if (!execute_query(query)) {
             return false;
@@ -313,6 +324,13 @@ bool DatabaseManager::add_recent_folder(const QString& folder_path) {
     return query.exec();
 }
 
+bool DatabaseManager::remove_recent_folder(const QString& folder_path) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM recent_folders WHERE folder_path = ?");
+    query.addBindValue(folder_path);
+    return query.exec();
+}
+
 QStringList DatabaseManager::get_recent_folders(int limit) {
     QStringList folders;
     
@@ -390,6 +408,139 @@ QStringList DatabaseManager::get_quick_access_folders(const QString& session_fol
     }
     
     return folders;
+}
+
+bool DatabaseManager::save_execution_log(const QString& session_folder, const QString& action,
+                                         const QString& source_path, const QString& dest_path) {
+    // Ensure table exists
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS execution_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            action TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            dest_path TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    )");
+    
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        INSERT INTO execution_log (session_folder, action, source_path, dest_path)
+        VALUES (?, ?, ?, ?)
+    )");
+    query.addBindValue(session_folder);
+    query.addBindValue(action);
+    query.addBindValue(source_path);
+    query.addBindValue(dest_path);
+    return query.exec();
+}
+
+std::vector<std::tuple<int, QString, QString, QString, QString>> DatabaseManager::get_execution_log(const QString& session_folder) {
+    std::vector<std::tuple<int, QString, QString, QString, QString>> entries;
+    
+    // Ensure table exists
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS execution_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            action TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            dest_path TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    )");
+    
+    QSqlQuery query(db_);
+    query.prepare(R"(
+        SELECT id, action, source_path, dest_path, timestamp
+        FROM execution_log
+        WHERE session_folder = ?
+        ORDER BY id DESC
+    )");
+    query.addBindValue(session_folder);
+    
+    if (query.exec()) {
+        while (query.next()) {
+            entries.emplace_back(
+                query.value(0).toInt(),
+                query.value(1).toString(),
+                query.value(2).toString(),
+                query.value(3).toString(),
+                query.value(4).toString()
+            );
+        }
+    }
+    
+    return entries;
+}
+
+bool DatabaseManager::remove_execution_log_entry(int id) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM execution_log WHERE id = ?");
+    query.addBindValue(id);
+    return query.exec();
+}
+
+bool DatabaseManager::clear_execution_log(const QString& session_folder) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM execution_log WHERE session_folder = ?");
+    query.addBindValue(session_folder);
+    return query.exec();
+}
+
+bool DatabaseManager::save_grid_config(const QString& session_folder, const QString& config_name,
+                                       const QStringList& folder_paths) {
+    // Delete existing config with this name
+    QSqlQuery del(db_);
+    del.prepare("DELETE FROM grid_configs WHERE session_folder = ? AND config_name = ?");
+    del.addBindValue(session_folder);
+    del.addBindValue(config_name);
+    if (!del.exec()) return false;
+    
+    for (int i = 0; i < folder_paths.size(); ++i) {
+        QSqlQuery ins(db_);
+        ins.prepare("INSERT INTO grid_configs (session_folder, config_name, folder_path, sort_order) VALUES (?, ?, ?, ?)");
+        ins.addBindValue(session_folder);
+        ins.addBindValue(config_name);
+        ins.addBindValue(folder_paths[i]);
+        ins.addBindValue(i);
+        if (!ins.exec()) return false;
+    }
+    return true;
+}
+
+QStringList DatabaseManager::get_grid_config(const QString& session_folder, const QString& config_name) {
+    QStringList paths;
+    
+    QSqlQuery q(db_);
+    q.prepare("SELECT folder_path FROM grid_configs WHERE session_folder = ? AND config_name = ? ORDER BY sort_order");
+    q.addBindValue(session_folder);
+    q.addBindValue(config_name);
+    if (q.exec()) {
+        while (q.next()) paths.append(q.value(0).toString());
+    }
+    return paths;
+}
+
+QStringList DatabaseManager::get_grid_config_names(const QString& session_folder) {
+    QStringList names;
+    
+    QSqlQuery q(db_);
+    q.prepare("SELECT DISTINCT config_name FROM grid_configs WHERE session_folder = ?");
+    q.addBindValue(session_folder);
+    if (q.exec()) {
+        while (q.next()) names.append(q.value(0).toString());
+    }
+    return names;
+}
+
+bool DatabaseManager::delete_grid_config(const QString& session_folder, const QString& config_name) {
+    QSqlQuery q(db_);
+    q.prepare("DELETE FROM grid_configs WHERE session_folder = ? AND config_name = ?");
+    q.addBindValue(session_folder);
+    q.addBindValue(config_name);
+    return q.exec();
 }
 
 int DatabaseManager::cleanup_stale_sessions(int days_old) {

@@ -58,11 +58,26 @@ public:
     
     // Recent folders
     bool add_recent_folder(const QString& folder_path);
+    bool remove_recent_folder(const QString& folder_path);
     QStringList get_recent_folders(int limit = 10);
     
     // Quick access folders (manual, limited to 10)
     bool save_quick_access_folders(const QString& session_folder, const QStringList& folders);
     QStringList get_quick_access_folders(const QString& session_folder);
+    
+    // Execution log (for undo support)
+    bool save_execution_log(const QString& session_folder, const QString& action,
+                           const QString& source_path, const QString& dest_path);
+    std::vector<std::tuple<int, QString, QString, QString, QString>> get_execution_log(const QString& session_folder);
+    bool remove_execution_log_entry(int id);
+    bool clear_execution_log(const QString& session_folder);
+    
+    // Grid configuration save/load
+    bool save_grid_config(const QString& session_folder, const QString& config_name,
+                         const QStringList& folder_paths);
+    QStringList get_grid_config(const QString& session_folder, const QString& config_name);
+    QStringList get_grid_config_names(const QString& session_folder);
+    bool delete_grid_config(const QString& session_folder, const QString& config_name);
     
     // Maintenance
     int cleanup_stale_sessions(int days_old = 30);
