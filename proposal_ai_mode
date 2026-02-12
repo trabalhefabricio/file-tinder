@@ -112,7 +112,7 @@ Filename pattern rules:
 
 Size-based rules:
   0 bytes                               → "Delete: Empty Files"
-  Exact duplicate (same name+size)      → "Delete: Duplicates" (already detected)
+  Exact duplicate (same name+size)      → "Delete: Duplicates" (reuses existing has_duplicate flag from scan)
 ```
 
 ### Tier 2: Content-Aware Grouping (Local analysis)
@@ -218,7 +218,7 @@ CREATE TABLE ai_categories (
 // In main.cpp FileTinderLauncher — add a third mode button:
 
 auto* ai_btn = new QPushButton("🤖 AI Mode");
-ai_btn->setToolTip("Let AI pre-sort your files, then review and confirm");
+ai_btn->setToolTip("Let AI suggest how to sort your files, then review and confirm");
 connect(ai_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_ai);
 
 void launch_ai() {
