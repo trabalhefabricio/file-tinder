@@ -19,6 +19,7 @@
 #include <QFileInfo>
 #include <QMouseEvent>
 #include <QTimer>
+#include <QMimeDatabase>
 
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
@@ -254,6 +255,102 @@ private:
         }
     }
     
+    bool show_pre_session_stats() {
+        QDir dir(chosen_path_);
+        QStringList files = dir.entryList(QDir::Files | QDir::NoDotAndDotDot);
+        
+        if (files.isEmpty()) {
+            QMessageBox::information(this, "Empty Folder", "This folder has no files to sort.");
+            return false;
+        }
+        
+        // Collect stats
+        qint64 total_size = 0;
+        int img_count = 0, vid_count = 0, aud_count = 0, doc_count = 0, arch_count = 0, other_count = 0;
+        QMimeDatabase mime_db;
+        
+        for (const QString& file : files) {
+            QFileInfo info(dir.absoluteFilePath(file));
+            total_size += info.size();
+            QString mime = mime_db.mimeTypeForFile(info.absoluteFilePath()).name();
+            if (mime.startsWith("image/")) img_count++;
+            else if (mime.startsWith("video/")) vid_count++;
+            else if (mime.startsWith("audio/")) aud_count++;
+            else if (mime.startsWith("text/") || mime.contains("pdf") || mime.contains("document")) doc_count++;
+            else if (mime.contains("zip") || mime.contains("archive") || mime.contains("compressed")) arch_count++;
+            else other_count++;
+        }
+        
+        // Format size
+        QString size_str;
+        if (total_size < 1024LL) size_str = QString("%1 B").arg(total_size);
+        else if (total_size < 1024LL*1024) size_str = QString("%1 KB").arg(total_size/1024.0, 0, 'f', 1);
+        else if (total_size < 1024LL*1024*1024) size_str = QString("%1 MB").arg(total_size/(1024.0*1024.0), 0, 'f', 1);
+        else size_str = QString("%1 GB").arg(total_size/(1024.0*1024.0*1024.0), 0, 'f', 2);
+        
+        // Show dashboard
+        QDialog dashboard(this);
+        dashboard.setWindowTitle("Session Overview");
+        dashboard.setMinimumSize(ui::scaling::scaled(450), ui::scaling::scaled(350));
+        
+        auto* layout = new QVBoxLayout(&dashboard);
+        
+        auto* header = new QLabel(chosen_path_);
+        header->setStyleSheet("font-size: 13px; font-weight: bold; color: #3498db;");
+        header->setWordWrap(true);
+        layout->addWidget(header);
+        
+        auto* summary = new QLabel(QString(
+            "<div style='font-size: 14px; margin: 10px 0;'>"
+            "<b>%1 files</b> &middot; %2 total"
+            "</div>"
+        ).arg(files.size()).arg(size_str));
+        layout->addWidget(summary);
+        
+        // Type breakdown
+        auto* breakdown = new QWidget();
+        breakdown->setStyleSheet("background-color: #34495e; border-radius: 8px; padding: 12px;");
+        auto* bd_layout = new QVBoxLayout(breakdown);
+        
+        auto add_row = [&](const QString& label, int count, const QString& color) {
+            if (count == 0) return;
+            auto* row = new QLabel(QString(
+                "<span style='color: %2; font-size: 13px;'>%1: <b>%3</b></span>"
+            ).arg(label, color).arg(count));
+            bd_layout->addWidget(row);
+        };
+        
+        add_row("Images", img_count, "#3498db");
+        add_row("Videos", vid_count, "#e74c3c");
+        add_row("Audio", aud_count, "#9b59b6");
+        add_row("Documents", doc_count, "#2ecc71");
+        add_row("Archives", arch_count, "#f39c12");
+        add_row("Other", other_count, "#95a5a6");
+        
+        layout->addWidget(breakdown);
+        layout->addStretch();
+        
+        auto* btn_layout = new QHBoxLayout();
+        auto* cancel_btn = new QPushButton("Cancel");
+        connect(cancel_btn, &QPushButton::clicked, &dashboard, &QDialog::reject);
+        btn_layout->addWidget(cancel_btn);
+        
+        btn_layout->addStretch();
+        
+        auto* start_btn = new QPushButton("Start Sorting");
+        start_btn->setStyleSheet(
+            "QPushButton { padding: 10px 25px; background-color: #27ae60; "
+            "color: white; font-weight: bold; border-radius: 6px; }"
+            "QPushButton:hover { background-color: #2ecc71; }"
+        );
+        connect(start_btn, &QPushButton::clicked, &dashboard, &QDialog::accept);
+        btn_layout->addWidget(start_btn);
+        
+        layout->addLayout(btn_layout);
+        
+        return dashboard.exec() == QDialog::Accepted;
+    }
+    
     bool validate_folder() {
         if (chosen_path_.isEmpty()) {
             QMessageBox::warning(this, "No Folder", "Please select a folder first.");
@@ -271,6 +368,7 @@ private:
     
     void launch_basic() {
         if (!validate_folder()) return;
+        if (!show_pre_session_stats()) return;
         
         LOG_INFO("Launcher", "Starting basic mode");
         
@@ -289,6 +387,7 @@ private:
     
     void launch_advanced() {
         if (!validate_folder()) return;
+        if (!show_pre_session_stats()) return;
         
         LOG_INFO("Launcher", "Starting advanced mode");
         

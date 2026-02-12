@@ -33,6 +33,7 @@
 #include <QUrl>
 #include <QMouseEvent>
 #include <QElapsedTimer>
+#include <QMenu>
 #include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
@@ -72,7 +73,10 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , switch_mode_btn_(nullptr)
     , help_btn_(nullptr)
     , swipe_animation_(nullptr)
-    , resize_timer_(nullptr) {
+    , resize_timer_(nullptr)
+    , file_position_label_(nullptr)
+    , size_badge_label_(nullptr)
+    , search_box_(nullptr) {
     
     setWindowTitle("File Tinder - Basic Mode");
     
@@ -143,6 +147,10 @@ void StandaloneFileTinderDialog::setup_ui() {
         "font-size: %1px; font-weight: bold; color: %2;"
     ).arg(ui::fonts::kHeaderSize).arg(ui::colors::kMoveColor));
     top_layout->addWidget(title_label);
+    
+    file_position_label_ = new QLabel("File 0 of 0");
+    file_position_label_->setStyleSheet("color: #95a5a6; font-size: 12px;");
+    top_layout->addWidget(file_position_label_);
     
     top_layout->addStretch();
     
@@ -270,6 +278,14 @@ void StandaloneFileTinderDialog::setup_ui() {
     file_info_label_->installEventFilter(this);
     preview_layout->addWidget(file_info_label_);
     
+    size_badge_label_ = new QLabel();
+    size_badge_label_->setAlignment(Qt::AlignCenter);
+    size_badge_label_->setStyleSheet(
+        "font-size: 16px; font-weight: bold; color: #f39c12; "
+        "background-color: #2c3e50; padding: 4px 8px; border-radius: 4px;"
+    );
+    preview_layout->addWidget(size_badge_label_);
+    
     main_layout->addWidget(preview_widget, 1);  // Stretch to fill space
     
     // Progress section
@@ -340,33 +356,18 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     action_layout->addLayout(main_btn_row);
     
-    // Row 2: BACK and SKIP (thinner buttons)
-    auto* nav_btn_row = new QHBoxLayout();
-    nav_btn_row->setSpacing(20);
-    
-    back_btn_ = new QPushButton("Back [Up]");
-    back_btn_->setFixedHeight(ui::scaling::scaled(40));
-    back_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    back_btn_->setStyleSheet(
-        "QPushButton { font-size: 12px; font-weight: bold; "
-        "background-color: #7f8c8d; border: 1px solid #6c7a7d; color: white; border-radius: 4px; }"
-        "QPushButton:hover { background-color: #95a5a6; }"
-    );
-    connect(back_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_back);
-    nav_btn_row->addWidget(back_btn_);
-    
-    skip_btn_ = new QPushButton("Skip [Down]");
+    // Row 2: SKIP only (Back removed — use Undo instead)
+    skip_btn_ = new QPushButton("Skip [↓]");
     skip_btn_->setFixedHeight(ui::scaling::scaled(40));
     skip_btn_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     skip_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; font-weight: bold; "
         "background-color: %1; border: 1px solid #d68910; color: white; border-radius: 4px; }"
         "QPushButton:hover { background-color: #e67e22; }"
+        "QPushButton:disabled { background-color: #5d4e37; color: #888; }"
     ).arg(ui::colors::kSkipColor));
     connect(skip_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_skip);
-    nav_btn_row->addWidget(skip_btn_);
-    
-    action_layout->addLayout(nav_btn_row);
+    action_layout->addWidget(skip_btn_);
     
     main_layout->addWidget(action_widget);
     
@@ -417,6 +418,21 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     bottom_layout->addStretch();
     
+    // Search box
+    search_box_ = new QLineEdit();
+    search_box_->setPlaceholderText("Search files...");
+    search_box_->setFixedWidth(ui::scaling::scaled(150));
+    search_box_->setFixedHeight(ui::scaling::scaled(36));
+    search_box_->setStyleSheet(
+        "QLineEdit { padding: 4px 8px; background-color: #34495e; "
+        "border-radius: 4px; color: white; border: 1px solid #4a6078; }"
+        "QLineEdit:focus { border: 2px solid #3498db; }"
+    );
+    connect(search_box_, &QLineEdit::textChanged, this, &StandaloneFileTinderDialog::on_search);
+    bottom_layout->addWidget(search_box_);
+    
+    bottom_layout->addSpacing(10);
+    
     finish_btn_ = new QPushButton("Finish Review");
     finish_btn_->setFixedHeight(ui::scaling::scaled(36));
     finish_btn_->setStyleSheet(
@@ -430,7 +446,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_layout->addWidget(bottom_bar);
     
     // Keyboard shortcuts hint
-    shortcuts_label_ = new QLabel("Keys: Right=Keep | Left=Delete | Down=Skip | Up=Back | Z=Undo | P=Preview | ?=Help");
+    shortcuts_label_ = new QLabel("→ Keep  |  ← Delete  |  ↓ Skip  |  Z Undo  |  P Preview  |  Enter Finish  |  ? Help");
     shortcuts_label_->setAlignment(Qt::AlignCenter);
     shortcuts_label_->setStyleSheet("color: #7f8c8d; font-size: 10px;");
     main_layout->addWidget(shortcuts_label_);
@@ -535,6 +551,9 @@ void StandaloneFileTinderDialog::show_current_file() {
         if (file_icon_label_) file_icon_label_->clear();
         if (preview_label_) preview_label_->setText("No more files to review");
         if (file_info_label_) file_info_label_->setText("");
+        if (keep_btn_) keep_btn_->setEnabled(false);
+        if (delete_btn_) delete_btn_->setEnabled(false);
+        if (skip_btn_) skip_btn_->setEnabled(false);
         return;
     }
     
@@ -542,6 +561,19 @@ void StandaloneFileTinderDialog::show_current_file() {
     update_preview(file.path);
     update_file_info(file);
     update_progress();
+    
+    // Update file position header
+    if (file_position_label_) {
+        int pos = current_filtered_index_ + 1;
+        int total = static_cast<int>(filtered_indices_.size());
+        file_position_label_->setText(QString("File %1 of %2").arg(pos).arg(total));
+    }
+    
+    // Context-aware button state
+    bool has_file = (file_idx >= 0);
+    if (keep_btn_) keep_btn_->setEnabled(has_file);
+    if (delete_btn_) delete_btn_->setEnabled(has_file);
+    if (skip_btn_) skip_btn_->setEnabled(has_file);
 }
 
 void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
@@ -649,6 +681,11 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
     file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
                                       "<span style='color: #95a5a6;'>%2 | %3 | %4</span>")
                               .arg(file.name, size_str, type_str, file.modified_date));
+    
+    // Prominent file size badge
+    if (size_badge_label_) {
+        size_badge_label_->setText(size_str);
+    }
 }
 
 void StandaloneFileTinderDialog::update_progress() {
@@ -737,6 +774,7 @@ void StandaloneFileTinderDialog::record_action(int file_index, const QString& ol
 
 void StandaloneFileTinderDialog::on_keep() {
     try {
+        if (animating_) return;
         int file_idx = get_current_file_index();
         if (file_idx < 0) return;
         
@@ -764,6 +802,7 @@ void StandaloneFileTinderDialog::on_keep() {
 
 void StandaloneFileTinderDialog::on_delete() {
     try {
+        if (animating_) return;
         int file_idx = get_current_file_index();
         if (file_idx < 0) return;
         
@@ -791,6 +830,7 @@ void StandaloneFileTinderDialog::on_delete() {
 
 void StandaloneFileTinderDialog::on_skip() {
     try {
+        if (animating_) return;
         int file_idx = get_current_file_index();
         if (file_idx < 0) return;
         
@@ -971,6 +1011,14 @@ void StandaloneFileTinderDialog::advance_to_next() {
     }
     if (file_info_label_) {
         file_info_label_->setText("Click 'Finish Review' to execute your decisions.");
+    }
+    if (finish_btn_) {
+        finish_btn_->setStyleSheet(
+            "QPushButton { font-size: 12px; padding: 8px 15px; "
+            "background-color: #2ecc71; border-radius: 4px; color: white; "
+            "border: 2px solid #f1c40f; }"
+            "QPushButton:hover { background-color: #27ae60; }"
+        );
     }
 }
 
@@ -1508,8 +1556,10 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
             on_skip();
             break;
         case Qt::Key_Up:
+            // Up arrow is no longer Back — use Z for Undo instead
+            break;
         case Qt::Key_Backspace:
-            on_back();
+            on_undo();
             break;
         case Qt::Key_Z:
             // Undo last action
@@ -1596,6 +1646,21 @@ bool StandaloneFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
         int file_idx = get_current_file_index();
         if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
+        }
+        return true;
+    }
+    if (obj == file_info_label_ && event->type() == QEvent::ContextMenu) {
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            QMenu menu;
+            QString folder = QFileInfo(files_[file_idx].path).absolutePath();
+            menu.addAction("Open Containing Folder", [folder]() {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+            });
+            menu.addAction("Open File", [this, file_idx]() {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
+            });
+            menu.exec(QCursor::pos());
         }
         return true;
     }
@@ -1839,6 +1904,8 @@ bool StandaloneFileTinderDialog::file_matches_filter(const FileToProcess& file) 
 void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     if (!preview_label_) return;
     
+    animating_ = true;
+    
     // Reuse existing effect or create new one
     auto* effect = qobject_cast<QGraphicsOpacityEffect*>(preview_label_->graphicsEffect());
     if (!effect) {
@@ -1881,6 +1948,7 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         }
         if (weak_this) {
             weak_this->swipe_animation_ = nullptr;
+            weak_this->animating_ = false;
         }
     });
     
@@ -1923,4 +1991,18 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
     help_dialog.setTextFormat(Qt::RichText);
     help_dialog.setText(shortcuts);
     help_dialog.exec();
+}
+
+void StandaloneFileTinderDialog::on_search(const QString& text) {
+    if (text.isEmpty()) return;
+    
+    // Find file matching search text in filtered list
+    for (int i = 0; i < static_cast<int>(filtered_indices_.size()); ++i) {
+        const auto& file = files_[filtered_indices_[i]];
+        if (file.name.contains(text, Qt::CaseInsensitive)) {
+            current_filtered_index_ = i;
+            show_current_file();
+            return;
+        }
+    }
 }

@@ -353,53 +353,50 @@ void AdvancedFileTinderDialog::setup_quick_access_panel() {
 }
 
 void AdvancedFileTinderDialog::setup_action_buttons() {
-    // Action buttons (thin, full width)
     auto* action_widget = new QWidget();
     auto* action_layout = new QHBoxLayout(action_widget);
-    action_layout->setSpacing(8);
+    action_layout->setSpacing(6);
     
     int btn_h = ui::scaling::scaled(ui::dimensions::kThinButtonHeight);
     
-    delete_btn_ = new QPushButton("Delete [<-]");
+    // Delete stays prominent
+    delete_btn_ = new QPushButton("Delete [←]");
     delete_btn_->setMinimumHeight(btn_h);
     delete_btn_->setStyleSheet(QString(
         "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
         "QPushButton:hover { background-color: #c0392b; }"
+        "QPushButton:disabled { background-color: #5d3a37; color: #888; }"
     ).arg(ui::colors::kDeleteColor));
     connect(delete_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_delete);
-    action_layout->addWidget(delete_btn_, 1);
+    action_layout->addWidget(delete_btn_, 2);
     
+    // Keep compact (secondary in Advanced — clicking folders is primary)
     keep_btn_ = new QPushButton("Keep [K]");
     keep_btn_->setMinimumHeight(btn_h);
     keep_btn_->setStyleSheet(QString(
-        "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
+        "QPushButton { background-color: %1; color: white; font-size: 11px; border-radius: 4px; }"
         "QPushButton:hover { background-color: #27ae60; }"
+        "QPushButton:disabled { background-color: #2d5d3a; color: #888; }"
     ).arg(ui::colors::kKeepColor));
     connect(keep_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_keep);
     action_layout->addWidget(keep_btn_, 1);
     
-    skip_btn_ = new QPushButton("Skip [Down]");
+    // Skip compact
+    skip_btn_ = new QPushButton("Skip [↓]");
     skip_btn_->setMinimumHeight(btn_h);
     skip_btn_->setStyleSheet(QString(
-        "QPushButton { background-color: %1; color: white; font-weight: bold; border-radius: 4px; }"
+        "QPushButton { background-color: %1; color: white; font-size: 11px; border-radius: 4px; }"
         "QPushButton:hover { background-color: #e67e22; }"
+        "QPushButton:disabled { background-color: #5d4e37; color: #888; }"
     ).arg(ui::colors::kSkipColor));
     connect(skip_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_skip);
     action_layout->addWidget(skip_btn_, 1);
     
-    back_btn_ = new QPushButton("Back [Up]");
-    back_btn_->setMinimumHeight(btn_h);
-    back_btn_->setStyleSheet(
-        "QPushButton { background-color: #95a5a6; color: white; font-weight: bold; border-radius: 4px; }"
-        "QPushButton:hover { background-color: #7f8c8d; }"
-    );
-    connect(back_btn_, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_back);
-    action_layout->addWidget(back_btn_, 1);
-    
+    // Undo compact
     undo_btn_ = new QPushButton("Undo [Z]");
     undo_btn_->setMinimumHeight(btn_h);
     undo_btn_->setStyleSheet(
-        "QPushButton { background-color: #9b59b6; color: white; font-weight: bold; border-radius: 4px; }"
+        "QPushButton { background-color: #9b59b6; color: white; font-size: 11px; border-radius: 4px; }"
         "QPushButton:hover { background-color: #8e44ad; }"
         "QPushButton:disabled { background-color: #5d4e6e; color: #888; }"
     );
@@ -409,7 +406,7 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     
     static_cast<QVBoxLayout*>(layout())->addWidget(action_widget);
     
-    // Bottom bar with Cancel and Finish
+    // Bottom bar
     auto* bottom_widget = new QWidget();
     auto* bottom_layout = new QHBoxLayout(bottom_widget);
     
@@ -418,7 +415,6 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     connect(cancel_btn, &QPushButton::clicked, this, &QDialog::reject);
     bottom_layout->addWidget(cancel_btn);
     
-    // Reset Progress button
     auto* reset_btn = new QPushButton("Reset");
     reset_btn->setStyleSheet(
         "QPushButton { padding: 8px 16px; background-color: #e74c3c; "
@@ -431,7 +427,6 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     
     bottom_layout->addStretch();
     
-    // Stats
     stats_label_ = new QLabel();
     stats_label_->setStyleSheet("color: #bdc3c7;");
     bottom_layout->addWidget(stats_label_);
@@ -909,6 +904,21 @@ bool AdvancedFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
         }
         return true;
     }
+    if (obj == file_name_label_ && event->type() == QEvent::ContextMenu) {
+        int file_idx = get_current_file_index();
+        if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
+            QMenu menu;
+            QString folder = QFileInfo(files_[file_idx].path).absolutePath();
+            menu.addAction("Open Containing Folder", [folder]() {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+            });
+            menu.addAction("Open File", [this, file_idx]() {
+                QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
+            });
+            menu.exec(QCursor::pos());
+        }
+        return true;
+    }
     // Middle-click to remove quick access items
     if (quick_access_list_ && obj == quick_access_list_->viewport() &&
         event->type() == QEvent::MouseButtonPress) {
@@ -1004,7 +1014,7 @@ void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
             on_skip();
             break;
         case Qt::Key_Up:
-            on_back();
+            break;  // No back — use Z for Undo
             break;
         case Qt::Key_N:
             prompt_add_folder();

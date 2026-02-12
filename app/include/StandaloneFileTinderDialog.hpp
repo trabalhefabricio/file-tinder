@@ -125,6 +125,9 @@ protected:
     QPushButton* sort_order_btn_;  // Asc/Desc toggle
     QCheckBox* folders_checkbox_;  // Include folders toggle
     QLabel* shortcuts_label_;
+    QLabel* file_position_label_;
+    QLabel* size_badge_label_;
+    QLineEdit* search_box_;
     
     QPushButton* back_btn_;
     QPushButton* delete_btn_;
@@ -144,6 +147,7 @@ protected:
     
     // Close guard to prevent re-entrant close
     bool closing_ = false;
+    bool animating_ = false;
     
     // Initialization
     virtual void setup_ui();
@@ -180,6 +184,7 @@ protected:
     virtual void on_delete();
     virtual void on_skip();
     virtual void on_back();
+    virtual void on_search(const QString& text);
     virtual void on_undo();           // Undo last action
     virtual void on_show_preview();   // Open image in separate window
     virtual void on_finish();
