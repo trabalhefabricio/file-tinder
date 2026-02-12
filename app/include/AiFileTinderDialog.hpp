@@ -1,0 +1,161 @@
+#ifndef AI_FILE_TINDER_DIALOG_HPP
+#define AI_FILE_TINDER_DIALOG_HPP
+
+#include "AdvancedFileTinderDialog.hpp"
+#include <QDialog>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QLineEdit>
+#include <QTextEdit>
+#include <QRadioButton>
+#include <QJsonObject>
+#include <QJsonArray>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QTimer>
+#include <QMap>
+#include <QTextBrowser>
+
+class MindMapView;
+class FolderTreeModel;
+
+// Stores an AI provider configuration
+struct AiProviderConfig {
+    QString provider_name;
+    QString api_key;
+    QString endpoint_url;
+    QString model_name;
+    bool is_local = false;
+    int rate_limit_rpm = 60;
+};
+
+// AI sorting mode
+enum class AiSortMode {
+    Auto,
+    Semi
+};
+
+// Category generation mode
+enum class AiCategoryMode {
+    KeepExisting,
+    GenerateNew,
+    SynthesizeNew,
+    KeepPlusGenerate
+};
+
+// Per-file AI suggestion
+struct AiFileSuggestion {
+    int file_index;
+    QStringList suggested_folders;
+    QString reasoning;
+};
+
+// ── AiSetupDialog ──────────────────────────────────────────
+class AiSetupDialog : public QDialog {
+    Q_OBJECT
+
+public:
+    explicit AiSetupDialog(const QStringList& existing_folders,
+                           int file_count,
+                           DatabaseManager& db,
+                           const QString& session_folder,
+                           QWidget* parent = nullptr);
+
+    AiSortMode sort_mode() const;
+    int semi_mode_count() const;
+    AiCategoryMode category_mode() const;
+    int category_depth() const;
+    QString folder_purpose() const;
+    AiProviderConfig provider_config() const;
+
+private:
+    void build_ui();
+    void load_saved_provider();
+    void save_provider_config();
+    void update_cost_estimate();
+
+    DatabaseManager& db_;
+    QString session_folder_;
+    QStringList existing_folders_;
+    int file_count_;
+
+    QComboBox* provider_combo_;
+    QLineEdit* api_key_edit_;
+    QLineEdit* endpoint_edit_;
+    QLineEdit* model_edit_;
+    QSpinBox* rate_limit_spin_;
+    QRadioButton* auto_radio_;
+    QRadioButton* semi_radio_;
+    QSpinBox* semi_count_spin_;
+    QComboBox* category_combo_;
+    QSpinBox* depth_spin_;
+    QTextEdit* purpose_edit_;
+    QLabel* cost_label_;
+};
+
+// ── AiFileTinderDialog ─────────────────────────────────────
+class AiFileTinderDialog : public AdvancedFileTinderDialog {
+    Q_OBJECT
+
+public:
+    explicit AiFileTinderDialog(const QString& source_folder,
+                                DatabaseManager& db,
+                                QWidget* parent = nullptr);
+    ~AiFileTinderDialog() override;
+
+    void initialize() override;
+
+protected:
+    void show_current_file() override;
+
+private:
+    // AI state
+    AiSortMode sort_mode_;
+    AiCategoryMode category_mode_;
+    int semi_count_;
+    int category_depth_;
+    QString folder_purpose_;
+    AiProviderConfig provider_config_;
+    std::vector<AiFileSuggestion> suggestions_;
+
+    QStringList highlighted_folders_;
+    QPushButton* rerun_ai_btn_ = nullptr;
+
+    // Network
+    QNetworkAccessManager* network_manager_;
+    QTimer* rate_limit_timer_;
+    int requests_this_minute_;
+
+    // Show AI setup dialog; returns false if user cancelled
+    bool show_ai_setup();
+
+    // Run the AI analysis on files (all or remaining only)
+    void run_ai_analysis(bool remaining_only);
+
+    // Build the prompt for the AI
+    QString build_analysis_prompt(const QStringList& file_descriptions,
+                                  const QStringList& available_folders);
+
+    // Parse AI response into suggestions
+    std::vector<AiFileSuggestion> parse_ai_response(const QString& response,
+                                                      const QMap<int, int>& batch_index_map);
+
+    // Send one batch to the API and return the response text (blocking)
+    QString send_api_request(const QString& prompt, QString& error_out);
+
+    // Apply auto-mode suggestions (set decisions, go to review)
+    void apply_auto_suggestions();
+
+    // Apply semi-mode suggestions (highlight folders for current file)
+    void apply_semi_suggestions();
+
+    // Highlight specific folders in the mind map and quick access
+    void highlight_suggested_folders(const QStringList& folders);
+    void clear_folder_highlights();
+
+    // Rate limiting
+    bool check_rate_limit();
+    void reset_rate_limit();
+};
+
+#endif // AI_FILE_TINDER_DIALOG_HPP

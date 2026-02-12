@@ -25,6 +25,7 @@
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
 #include "AdvancedFileTinderDialog.hpp"
+#include "AiFileTinderDialog.hpp"
 #include "FileTinderExecutor.hpp"
 #include "AppLogger.hpp"
 #include "DiagnosticTool.hpp"
@@ -203,6 +204,15 @@ private:
         );
         connect(adv_mode_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_advanced);
         modes_row->addWidget(adv_mode_btn);
+        
+        auto* ai_mode_btn = new QPushButton("\xF0\x9F\xA4\x96 AI Mode\n(AI-assisted sorting)");
+        ai_mode_btn->setMinimumSize(ui::scaling::scaled(180), ui::scaling::scaled(70));
+        ai_mode_btn->setStyleSheet(
+            "QPushButton { padding: 12px; background-color: #2980b9; color: white; border: none; font-size: 13px; }"
+            "QPushButton:hover { background-color: #1a6fa0; }"
+        );
+        connect(ai_mode_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_ai);
+        modes_row->addWidget(ai_mode_btn);
         
         root_layout->addLayout(modes_row);
         
@@ -426,6 +436,35 @@ private:
             skip_stats_on_next_launch_ = true;
             // Defer mode switch to break recursive exec() chain
             QTimer::singleShot(0, this, &FileTinderLauncher::launch_basic);
+        });
+        
+        dlg->initialize();
+        dlg->exec();
+        dlg->deleteLater();
+    }
+    
+    void launch_ai() {
+        if (!validate_folder()) return;
+        if (skip_stats_on_next_launch_) {
+            skip_stats_on_next_launch_ = false;
+        } else {
+            if (!show_pre_session_stats()) return;
+        }
+        
+        LOG_INFO("Launcher", "Starting AI mode");
+        
+        auto* dlg = new AiFileTinderDialog(chosen_path_, db_manager_, this);
+        
+        connect(dlg, &AiFileTinderDialog::switch_to_basic_mode, this, [this, dlg]() {
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_basic);
+        });
+        
+        connect(dlg, &AiFileTinderDialog::switch_to_advanced_mode, this, [this, dlg]() {
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_advanced);
         });
         
         dlg->initialize();

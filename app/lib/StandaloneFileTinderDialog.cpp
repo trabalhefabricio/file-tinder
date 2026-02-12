@@ -1243,7 +1243,9 @@ void StandaloneFileTinderDialog::show_review_summary() {
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     
     // Determine mode name for this dialog
-    QString mode_name = windowTitle().contains("Advanced") ? "Advanced" : "Basic";
+    QString mode_name = "Basic";
+    if (windowTitle().contains("AI Mode")) mode_name = "AI";
+    else if (windowTitle().contains("Advanced")) mode_name = "Advanced";
     
     // Populate only files with non-pending decisions
     int visible_row = 0;
@@ -1312,9 +1314,13 @@ void StandaloneFileTinderDialog::show_review_summary() {
         });
         table->setCellWidget(visible_row, 2, dest_combo);
         
-        // Mode column (Req 22-23): moves with destinations are from Advanced, others from current mode
-        QString file_mode = (file.decision == "move" && !file.destination_folder.isEmpty())
-                            ? "Advanced" : mode_name;
+        // Mode column: moves with destinations show the mode that made the decision
+        QString file_mode;
+        if (file.decision == "move" && !file.destination_folder.isEmpty()) {
+            file_mode = mode_name;  // Current mode made the move
+        } else {
+            file_mode = mode_name;
+        }
         auto* mode_item = new QTableWidgetItem(file_mode);
         mode_item->setFlags(mode_item->flags() & ~Qt::ItemIsEditable);
         table->setItem(visible_row, 3, mode_item);
