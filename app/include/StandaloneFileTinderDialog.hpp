@@ -43,6 +43,7 @@ struct FileToProcess {
     QString destination_folder; // For move operations
     QString mime_type;          // MIME type for filtering
     bool is_directory;          // For folder support
+    bool has_duplicate = false; // Cached: another file shares same name+size
 };
 
 // File filter types

@@ -20,6 +20,7 @@
 #include <QMouseEvent>
 #include <QTimer>
 #include <QMimeDatabase>
+#include <QProgressDialog>
 
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
@@ -265,12 +266,21 @@ private:
             return false;
         }
         
-        // Collect stats
+        // Collect stats (show progress for large dirs)
         qint64 total_size = 0;
         int img_count = 0, vid_count = 0, aud_count = 0, doc_count = 0, arch_count = 0, other_count = 0;
         QMimeDatabase mime_db;
         
-        for (const QString& file : files) {
+        QProgressDialog* progress = nullptr;
+        if (files.size() > 200) {
+            progress = new QProgressDialog("Analyzing files...", QString(), 0, files.size(), this);
+            progress->setWindowModality(Qt::WindowModal);
+            progress->setMinimumDuration(0);
+            progress->show();
+        }
+        
+        for (int i = 0; i < files.size(); ++i) {
+            const QString& file = files[i];
             QFileInfo info(dir.absoluteFilePath(file));
             total_size += info.size();
             QString mime = mime_db.mimeTypeForFile(info.absoluteFilePath()).name();
@@ -280,7 +290,13 @@ private:
             else if (mime.startsWith("text/") || mime.contains("pdf") || mime.contains("document")) doc_count++;
             else if (mime.contains("zip") || mime.contains("archive") || mime.contains("compressed")) arch_count++;
             else other_count++;
+            
+            if (progress && (i % 50 == 0)) {
+                progress->setValue(i);
+                QApplication::processEvents();
+            }
         }
+        delete progress;
         
         // Format size
         QString size_str;

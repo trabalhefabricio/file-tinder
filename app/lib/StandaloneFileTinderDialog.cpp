@@ -447,7 +447,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_layout->addWidget(bottom_bar);
     
     // Keyboard shortcuts hint
-    shortcuts_label_ = new QLabel("→ Keep  |  ← Delete  |  ↓ Skip  |  Z Undo  |  P Preview  |  Enter Finish  |  ? Help");
+    shortcuts_label_ = new QLabel("→ Keep  |  ← Delete  |  ↓ Skip  |  Z/⌫ Undo  |  P Preview  |  Enter Finish  |  ? Help");
     shortcuts_label_->setAlignment(Qt::AlignCenter);
     shortcuts_label_->setStyleSheet("color: #7f8c8d; font-size: 10px;");
     main_layout->addWidget(shortcuts_label_);
@@ -516,6 +516,19 @@ void StandaloneFileTinderDialog::scan_files() {
     delete progress;
     
     LOG_INFO("BasicMode", QString("Scanned %1 files from %2").arg(files_.size()).arg(source_folder_));
+    
+    // Build duplicate detection cache (name+size → count)
+    QHash<QPair<QString, qint64>, int> dup_map;
+    for (const auto& f : files_) {
+        if (!f.is_directory) {
+            dup_map[{f.name, f.size}]++;
+        }
+    }
+    for (auto& f : files_) {
+        if (!f.is_directory) {
+            f.has_duplicate = dup_map.value({f.name, f.size}, 0) > 1;
+        }
+    }
     
     // Update progress
     if (!files_.empty() && progress_bar_) {
@@ -704,15 +717,10 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
     
     if (!file_info_label_) return;
     
-    // Duplicate detection: check if any other file shares name and size
+    // Duplicate detection: use cached flag from scan
     QString dup_warning;
-    if (!file.is_directory) {
-        for (const auto& other : files_) {
-            if (&other != &file && other.name == file.name && other.size == file.size) {
-                dup_warning = "<br><span style='color: #e74c3c; font-size: 11px;'>⚠ Possible duplicate found</span>";
-                break;
-            }
-        }
+    if (file.has_duplicate) {
+        dup_warning = "<br><span style='color: #e74c3c; font-size: 11px;'>⚠ Possible duplicate found</span>";
     }
     
     file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
@@ -2083,7 +2091,7 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <tr><td><span class='key'>→</span> Right Arrow</td><td>Keep file in original location</td></tr>
 <tr><td><span class='key'>←</span> Left Arrow</td><td>Mark file for deletion</td></tr>
 <tr><td><span class='key'>↓</span> Down Arrow</td><td>Skip file (no action)</td></tr>
-<tr><td><span class='key'>Z</span></td><td>Undo last action</td></tr>
+<tr><td><span class='key'>Z</span> or <span class='key'>Backspace</span></td><td>Undo last action</td></tr>
 <tr><td><span class='key'>P</span></td><td>Toggle file preview</td></tr>
 <tr><td><span class='key'>Enter</span></td><td>Finish review and execute</td></tr>
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
