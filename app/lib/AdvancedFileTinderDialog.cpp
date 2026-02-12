@@ -750,12 +750,14 @@ void AdvancedFileTinderDialog::remove_from_quick_access(int index) {
 void AdvancedFileTinderDialog::update_quick_access_display() {
     quick_access_list_->clear();
     
+    static const int kMaxQuickAccessNameLength = 14;
+    
     for (int i = 0; i < quick_access_folders_.size(); ++i) {
         QString path = quick_access_folders_[i];
         QString folder_name = QFileInfo(path).fileName();
         // Truncate long names to keep uniform item width
-        if (folder_name.length() > 14) {
-            folder_name = folder_name.left(13) + "…";
+        if (folder_name.length() > kMaxQuickAccessNameLength) {
+            folder_name = folder_name.left(kMaxQuickAccessNameLength - 1) + "…";
         }
         QString label = QString("%1: %2").arg(i == 9 ? 0 : i + 1).arg(folder_name);
         auto* item = new QListWidgetItem(label);

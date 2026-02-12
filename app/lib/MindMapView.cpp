@@ -38,7 +38,7 @@ void FolderButton::update_display() {
         count_str = QString(" (%1)").arg(node_->assigned_file_count);
     }
     
-    // Truncate long names to fit button width (wider buttons show more text)
+    // Truncate long names to fit button width (~9px per character at font-size 10px)
     int max_len = qMax(8, width() / 9);
     if (name.length() > max_len) {
         name = name.left(max_len - 1) + "…";
