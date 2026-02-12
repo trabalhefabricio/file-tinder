@@ -195,16 +195,13 @@ void AdvancedFileTinderDialog::setup_mind_map() {
 
 void AdvancedFileTinderDialog::setup_file_info_panel() {
     file_info_panel_ = new QWidget();
-    file_info_panel_->setStyleSheet("background-color: #f5f5f5; border-radius: 4px; padding: 8px;");
-    file_info_panel_->setCursor(Qt::PointingHandCursor);
-    file_info_panel_->setToolTip("Double-click to open file");
-    file_info_panel_->installEventFilter(this);
+    file_info_panel_->setStyleSheet("background-color: #34495e; border-radius: 4px; padding: 8px;");
     auto* info_layout = new QHBoxLayout(file_info_panel_);
     info_layout->setContentsMargins(10, 8, 10, 8);
     
     // File type icon
     adv_file_icon_label_ = new QLabel("[FILE]");
-    adv_file_icon_label_->setStyleSheet("font-size: 18px; font-weight: bold; color: #333; min-width: 60px;");
+    adv_file_icon_label_->setStyleSheet("font-size: 18px; font-weight: bold; color: #3498db; min-width: 60px;");
     adv_file_icon_label_->setAlignment(Qt::AlignCenter);
     info_layout->addWidget(adv_file_icon_label_);
     
@@ -215,11 +212,14 @@ void AdvancedFileTinderDialog::setup_file_info_panel() {
     text_layout->setSpacing(2);
     
     file_name_label_ = new QLabel("No file selected");
-    file_name_label_->setStyleSheet("font-size: 14px; font-weight: bold;");
+    file_name_label_->setStyleSheet("font-size: 14px; font-weight: bold; color: #ecf0f1;");
+    file_name_label_->setCursor(Qt::PointingHandCursor);
+    file_name_label_->setToolTip("Double-click to open file");
+    file_name_label_->installEventFilter(this);
     text_layout->addWidget(file_name_label_);
     
     file_details_label_ = new QLabel("");
-    file_details_label_->setStyleSheet("font-size: 11px; color: #666;");
+    file_details_label_->setStyleSheet("font-size: 11px; color: #bdc3c7;");
     text_layout->addWidget(file_details_label_);
     
     info_layout->addWidget(text_widget, 1);
@@ -239,7 +239,7 @@ void AdvancedFileTinderDialog::setup_quick_access_panel() {
     qa_layout->setContentsMargins(0, 0, 0, 0);
     
     auto* qa_label = new QLabel("Quick Access (1-0):");
-    qa_label->setStyleSheet("font-weight: bold;");
+    qa_label->setStyleSheet("font-weight: bold; color: #ecf0f1;");
     qa_layout->addWidget(qa_label);
     
     quick_access_list_ = new QListWidget();
@@ -249,8 +249,8 @@ void AdvancedFileTinderDialog::setup_quick_access_panel() {
     quick_access_list_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     quick_access_list_->setStyleSheet(
         "QListWidget { background: transparent; border: none; }"
-        "QListWidget::item { padding: 4px 10px; background: #eee; border-radius: 3px; margin-right: 4px; }"
-        "QListWidget::item:hover { background: #ddd; }"
+        "QListWidget::item { padding: 4px 10px; background: #34495e; border-radius: 3px; margin-right: 4px; color: #ecf0f1; }"
+        "QListWidget::item:hover { background: #3d566e; }"
         "QListWidget::item:selected { background: #0078d4; color: white; }"
     );
     connect(quick_access_list_, &QListWidget::itemClicked,
@@ -353,7 +353,7 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     
     // Stats
     stats_label_ = new QLabel();
-    stats_label_->setStyleSheet("color: #666;");
+    stats_label_->setStyleSheet("color: #bdc3c7;");
     bottom_layout->addWidget(stats_label_);
     
     bottom_layout->addStretch();
@@ -689,11 +689,20 @@ void AdvancedFileTinderDialog::update_file_info_display() {
 }
 
 QString AdvancedFileTinderDialog::get_file_type_icon(const QString& path) {
+    int idx = get_current_file_index();
+    // Use cached mime type from files_ to avoid expensive disk lookup
+    QString mime;
+    if (idx >= 0 && idx < static_cast<int>(files_.size()) && files_[idx].path == path) {
+        mime = files_[idx].mime_type;
+    }
+    
     QFileInfo info(path);
     if (info.isDir()) return "[DIR]";
     
-    QMimeDatabase db;
-    QString mime = db.mimeTypeForFile(path).name();
+    if (mime.isEmpty()) {
+        QMimeDatabase db;
+        mime = db.mimeTypeForFile(path).name();
+    }
     
     if (mime.startsWith("image/")) return "[IMG]";
     if (mime.startsWith("video/")) return "[VID]";
@@ -753,7 +762,7 @@ void AdvancedFileTinderDialog::reject() {
 }
 
 bool AdvancedFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
-    if (obj == file_info_panel_ && event->type() == QEvent::MouseButtonDblClick) {
+    if (obj == file_name_label_ && event->type() == QEvent::MouseButtonDblClick) {
         int file_idx = get_current_file_index();
         if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));

@@ -79,7 +79,7 @@ private:
     QMap<QString, QPair<int, int>> grid_positions_;
     int next_row_;
     int next_col_;
-    static const int kGridColumns = 4;
+    static const int kMaxRowsPerCol = 6;  // Items per column before wrapping to next column
     
     void build_grid();
     void place_folder_node(FolderNode* node);

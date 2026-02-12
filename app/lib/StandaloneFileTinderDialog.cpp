@@ -258,16 +258,16 @@ void StandaloneFileTinderDialog::setup_ui() {
     preview_label_ = new QLabel();
     preview_label_->setAlignment(Qt::AlignCenter);
     preview_label_->setWordWrap(true);
-    preview_label_->setCursor(Qt::PointingHandCursor);
-    preview_label_->setToolTip("Double-click to open file");
-    preview_label_->installEventFilter(this);
     preview_layout->addWidget(preview_label_, 1);
     
-    // File name and info below preview
+    // File name and info below preview — double-click to open
     file_info_label_ = new QLabel();
     file_info_label_->setAlignment(Qt::AlignCenter);
     file_info_label_->setStyleSheet("color: #ecf0f1; padding: 10px; font-size: 13px;");
     file_info_label_->setWordWrap(true);
+    file_info_label_->setCursor(Qt::PointingHandCursor);
+    file_info_label_->setToolTip("Double-click to open file");
+    file_info_label_->installEventFilter(this);
     preview_layout->addWidget(file_info_label_);
     
     main_layout->addWidget(preview_widget, 1);  // Stretch to fill space
@@ -1151,8 +1151,10 @@ void StandaloneFileTinderDialog::show_review_summary() {
         dest_item->setToolTip(file.destination_folder);
         table->setItem(visible_row, 2, dest_item);
         
-        // Mode column (Req 22-23)
-        auto* mode_item = new QTableWidgetItem(mode_name);
+        // Mode column (Req 22-23): moves with destinations are from Advanced, others from current mode
+        QString file_mode = (file.decision == "move" && !file.destination_folder.isEmpty())
+                            ? "Advanced" : mode_name;
+        auto* mode_item = new QTableWidgetItem(file_mode);
         mode_item->setFlags(mode_item->flags() & ~Qt::ItemIsEditable);
         table->setItem(visible_row, 3, mode_item);
         
@@ -1560,7 +1562,7 @@ void StandaloneFileTinderDialog::reject() {
 }
 
 bool StandaloneFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
-    if (obj == preview_label_ && event->type() == QEvent::MouseButtonDblClick) {
+    if (obj == file_info_label_ && event->type() == QEvent::MouseButtonDblClick) {
         int file_idx = get_current_file_index();
         if (file_idx >= 0 && file_idx < static_cast<int>(files_.size())) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));

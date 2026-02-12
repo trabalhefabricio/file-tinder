@@ -16,8 +16,8 @@ FolderButton::FolderButton(FolderNode* node, QWidget* parent)
     , node_(node)
     , is_selected_(false) {
     setCursor(Qt::PointingHandCursor);
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    setFixedHeight(ui::scaling::scaled(50));
+    setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    setFixedSize(ui::scaling::scaled(120), ui::scaling::scaled(28));
     update_display();
     update_style();
     
@@ -32,19 +32,18 @@ void FolderButton::update_display() {
         name = QFileInfo(node_->path).fileName();
     }
     
-    // Build display text with icon and count
-    QString icon;
-    if (node_->is_external) {
-        icon = node_->exists ? "📁" : "📂";
-    } else {
-        icon = node_->exists ? "📁" : "✨";
-    }
+    // Compact display: name + count
     QString count_str;
     if (node_->assigned_file_count > 0) {
         count_str = QString(" (%1)").arg(node_->assigned_file_count);
     }
     
-    setText(icon + " " + name + count_str);
+    // Truncate long names
+    if (name.length() > 12) {
+        name = name.left(11) + "…";
+    }
+    
+    setText(name + count_str);
     setToolTip(node_->path);
 }
 
@@ -56,33 +55,30 @@ void FolderButton::set_selected(bool selected) {
 void FolderButton::update_style() {
     if (is_selected_) {
         setStyleSheet(
-            "QPushButton { text-align: center; padding: 8px; "
+            "QPushButton { text-align: center; padding: 2px 6px; "
             "background-color: #1a3a5c; border: 2px solid #3498db; "
-            "border-radius: 6px; color: #3498db; font-weight: bold; font-size: 12px; }"
+            "border-radius: 4px; color: #3498db; font-weight: bold; font-size: 10px; }"
             "QPushButton:hover { background-color: #1e4a6e; }"
         );
     } else if (!node_->exists) {
-        // Virtual folder — dashed border
         setStyleSheet(
-            "QPushButton { text-align: center; padding: 8px; "
+            "QPushButton { text-align: center; padding: 2px 6px; "
             "background-color: #3a3520; border: 1px dashed #f39c12; "
-            "border-radius: 6px; color: #f39c12; font-size: 12px; }"
+            "border-radius: 4px; color: #f39c12; font-size: 10px; }"
             "QPushButton:hover { background-color: #4a4530; }"
         );
     } else if (node_->is_external) {
-        // External folder — purple accent
         setStyleSheet(
-            "QPushButton { text-align: center; padding: 8px; "
+            "QPushButton { text-align: center; padding: 2px 6px; "
             "background-color: #2d1f3d; border: 1px solid #9b59b6; "
-            "border-radius: 6px; color: #bb6bd9; font-size: 12px; }"
+            "border-radius: 4px; color: #bb6bd9; font-size: 10px; }"
             "QPushButton:hover { background-color: #3d2f4d; }"
         );
     } else {
-        // Normal folder — dark theme
         setStyleSheet(
-            "QPushButton { text-align: center; padding: 8px; "
+            "QPushButton { text-align: center; padding: 2px 6px; "
             "background-color: #34495e; border: 1px solid #4a6078; "
-            "border-radius: 6px; color: #ecf0f1; font-size: 12px; }"
+            "border-radius: 4px; color: #ecf0f1; font-size: 10px; }"
             "QPushButton:hover { background-color: #3d566e; border-color: #5a7a98; }"
         );
     }
@@ -133,7 +129,7 @@ MindMapView::MindMapView(QWidget* parent)
     outer_layout->addWidget(scroll_area_);
     
     setAcceptDrops(true);
-    setMinimumHeight(ui::scaling::scaled(200));
+    setMinimumHeight(ui::scaling::scaled(120));
 }
 
 MindMapView::~MindMapView() = default;
@@ -163,20 +159,20 @@ void MindMapView::refresh_layout() {
     content_widget_ = new QWidget();
     content_widget_->setStyleSheet("background-color: #2c3e50;");
     grid_layout_ = new QGridLayout(content_widget_);
-    grid_layout_->setContentsMargins(10, 10, 10, 10);
-    grid_layout_->setSpacing(8);
+    grid_layout_->setContentsMargins(6, 6, 6, 6);
+    grid_layout_->setSpacing(4);
     
-    // Build the grid
+    // Build the horizontal grid
     build_grid();
     
     // Add the "+" button in the next available slot
-    add_button_ = new QPushButton("+ Add Folder");
-    add_button_->setFixedHeight(ui::scaling::scaled(50));
+    add_button_ = new QPushButton("+");
+    add_button_->setFixedSize(ui::scaling::scaled(28), ui::scaling::scaled(28));
     add_button_->setCursor(Qt::PointingHandCursor);
     add_button_->setStyleSheet(
-        "QPushButton { text-align: center; padding: 8px; "
+        "QPushButton { text-align: center; padding: 2px; "
         "background-color: #27ae60; border: none; "
-        "border-radius: 6px; color: white; font-weight: bold; font-size: 12px; }"
+        "border-radius: 4px; color: white; font-weight: bold; font-size: 14px; }"
         "QPushButton:hover { background-color: #2ecc71; }"
     );
     connect(add_button_, &QPushButton::clicked, this, &MindMapView::add_folder_requested);
@@ -191,29 +187,32 @@ void MindMapView::build_grid() {
     
     FolderNode* root = model_->root_node();
     
-    // Root folder gets its own row spanning all columns
+    // Root folder in column 0, spanning all rows that children will use
     auto* root_btn = new FolderButton(root, content_widget_);
+    root_btn->setFixedSize(ui::scaling::scaled(120), ui::scaling::scaled(32));
     root_btn->setStyleSheet(
-        "QPushButton { text-align: center; padding: 10px; "
+        "QPushButton { text-align: center; padding: 2px 6px; "
         "background-color: #1a252f; border: 2px solid #3498db; "
-        "border-radius: 8px; color: #3498db; font-weight: bold; font-size: 14px; }"
+        "border-radius: 4px; color: #3498db; font-weight: bold; font-size: 11px; }"
         "QPushButton:hover { background-color: #1e2f3d; }"
     );
-    root_btn->setFixedHeight(ui::scaling::scaled(55));
     buttons_[root->path] = root_btn;
     grid_positions_[root->path] = {0, 0};
-    grid_layout_->addWidget(root_btn, 0, 0, 1, kGridColumns);
     
     connect(root_btn, &FolderButton::folder_clicked, this, &MindMapView::folder_clicked);
     connect(root_btn, &FolderButton::folder_right_clicked, this, &MindMapView::folder_context_menu);
     
-    // Child folders in a grid starting from row 1
-    next_row_ = 1;
-    next_col_ = 0;
+    // Child folders fill columns 1+ going down, wrapping to next column
+    next_row_ = 0;
+    next_col_ = 1;
     
     for (const auto& child : root->children) {
         place_folder_node(child.get());
     }
+    
+    // Now place root spanning correct number of rows
+    int total_rows = qMax(1, next_row_ + (next_col_ > 1 ? 1 : 0));
+    grid_layout_->addWidget(root_btn, 0, 0, total_rows, 1, Qt::AlignVCenter);
 }
 
 void MindMapView::place_folder_node(FolderNode* node) {
@@ -225,14 +224,14 @@ void MindMapView::place_folder_node(FolderNode* node) {
     connect(btn, &FolderButton::folder_clicked, this, &MindMapView::folder_clicked);
     connect(btn, &FolderButton::folder_right_clicked, this, &MindMapView::folder_context_menu);
     
-    // Advance to next grid position
-    next_col_++;
-    if (next_col_ >= kGridColumns) {
-        next_col_ = 0;
-        next_row_++;
+    // Advance: go down in current column, wrap to next column after kMaxRowsPerCol
+    next_row_++;
+    if (next_row_ >= kMaxRowsPerCol) {
+        next_row_ = 0;
+        next_col_++;
     }
     
-    // Place children recursively (they go into the grid too, no indenting)
+    // Place children (they go into the grid too)
     for (const auto& child : node->children) {
         place_folder_node(child.get());
     }
