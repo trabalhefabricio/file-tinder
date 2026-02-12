@@ -692,7 +692,8 @@ QString AdvancedFileTinderDialog::get_file_type_icon(const QString& path) {
     int idx = get_current_file_index();
     // Use cached mime type from files_ to avoid expensive disk lookup
     QString mime;
-    if (idx >= 0 && idx < static_cast<int>(files_.size()) && files_[idx].path == path) {
+    if (idx >= 0 && idx < static_cast<int>(files_.size()) &&
+        QFileInfo(files_[idx].path).canonicalFilePath() == QFileInfo(path).canonicalFilePath()) {
         mime = files_[idx].mime_type;
     }
     

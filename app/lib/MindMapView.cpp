@@ -38,9 +38,10 @@ void FolderButton::update_display() {
         count_str = QString(" (%1)").arg(node_->assigned_file_count);
     }
     
-    // Truncate long names
-    if (name.length() > 12) {
-        name = name.left(11) + "…";
+    // Truncate long names to fit compact button width
+    static const int kMaxDisplayNameLength = 12;
+    if (name.length() > kMaxDisplayNameLength) {
+        name = name.left(kMaxDisplayNameLength - 1) + "…";
     }
     
     setText(name + count_str);
@@ -210,7 +211,8 @@ void MindMapView::build_grid() {
         place_folder_node(child.get());
     }
     
-    // Now place root spanning correct number of rows
+    // Root spans all rows used by children. If next_col_ moved past col 1,
+    // the current next_row_ is partial (items still being placed), so add 1.
     int total_rows = qMax(1, next_row_ + (next_col_ > 1 ? 1 : 0));
     grid_layout_->addWidget(root_btn, 0, 0, total_rows, 1, Qt::AlignVCenter);
 }
