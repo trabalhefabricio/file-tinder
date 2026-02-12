@@ -101,6 +101,19 @@ bool DatabaseManager::create_tables() {
         )
     )";
     
+    // AI provider settings
+    queries << R"(
+        CREATE TABLE IF NOT EXISTS ai_providers (
+            provider_name TEXT PRIMARY KEY,
+            api_key TEXT,
+            endpoint_url TEXT,
+            model_name TEXT,
+            is_local INTEGER DEFAULT 0,
+            rate_limit_rpm INTEGER DEFAULT 60,
+            last_used DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    )";
+    
     for (const QString& query : queries) {
         if (!execute_query(query)) {
             return false;
@@ -541,6 +554,55 @@ bool DatabaseManager::delete_grid_config(const QString& session_folder, const QS
     q.addBindValue(session_folder);
     q.addBindValue(config_name);
     return q.exec();
+}
+
+bool DatabaseManager::save_ai_provider(const QString& provider_name, const QString& api_key,
+                                       const QString& endpoint_url, const QString& model_name,
+                                       bool is_local, int rate_limit_rpm) {
+    QSqlQuery q(db_);
+    q.prepare(R"(
+        INSERT OR REPLACE INTO ai_providers 
+        (provider_name, api_key, endpoint_url, model_name, is_local, rate_limit_rpm, last_used)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    )");
+    q.addBindValue(provider_name);
+    q.addBindValue(api_key);
+    q.addBindValue(endpoint_url);
+    q.addBindValue(model_name);
+    q.addBindValue(is_local ? 1 : 0);
+    q.addBindValue(rate_limit_rpm);
+    if (!q.exec()) {
+        qWarning() << "Failed to save AI provider:" << q.lastError().text();
+        return false;
+    }
+    return true;
+}
+
+bool DatabaseManager::get_ai_provider(const QString& provider_name, QString& api_key,
+                                      QString& endpoint_url, QString& model_name,
+                                      bool& is_local, int& rate_limit_rpm) {
+    QSqlQuery q(db_);
+    q.prepare("SELECT api_key, endpoint_url, model_name, is_local, rate_limit_rpm FROM ai_providers WHERE provider_name = ?");
+    q.addBindValue(provider_name);
+    if (q.exec() && q.next()) {
+        api_key = q.value(0).toString();
+        endpoint_url = q.value(1).toString();
+        model_name = q.value(2).toString();
+        is_local = q.value(3).toBool();
+        rate_limit_rpm = q.value(4).toInt();
+        return true;
+    }
+    return false;
+}
+
+QStringList DatabaseManager::get_ai_provider_names() {
+    QStringList names;
+    QSqlQuery q(db_);
+    q.prepare("SELECT provider_name FROM ai_providers ORDER BY last_used DESC");
+    if (q.exec()) {
+        while (q.next()) names.append(q.value(0).toString());
+    }
+    return names;
 }
 
 int DatabaseManager::cleanup_stale_sessions(int days_old) {
