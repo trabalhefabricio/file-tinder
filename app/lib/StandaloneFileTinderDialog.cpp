@@ -34,6 +34,7 @@
 #include <QMouseEvent>
 #include <QElapsedTimer>
 #include <QMenu>
+#include <QImageReader>
 #include <algorithm>
 
 StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_folder,
@@ -78,7 +79,7 @@ StandaloneFileTinderDialog::StandaloneFileTinderDialog(const QString& source_fol
     , size_badge_label_(nullptr)
     , search_box_(nullptr) {
     
-    setWindowTitle("File Tinder - Basic Mode");
+    setWindowTitle(QString("File Tinder - Basic Mode — %1").arg(QFileInfo(source_folder).fileName()));
     
     // Setup resize timer for debouncing preview updates
     resize_timer_ = new QTimer(this);
@@ -473,7 +474,18 @@ void StandaloneFileTinderDialog::scan_files() {
     
     QStringList entries = dir.entryList(filters);
     
-    for (const QString& entry : entries) {
+    // Show progress for large directories (>200 files)
+    const bool show_progress = entries.size() > 200;
+    QProgressDialog* progress = nullptr;
+    if (show_progress) {
+        progress = new QProgressDialog("Scanning files...", QString(), 0, entries.size(), this);
+        progress->setWindowModality(Qt::WindowModal);
+        progress->setMinimumDuration(0);
+        progress->show();
+    }
+    
+    for (int idx = 0; idx < entries.size(); ++idx) {
+        const QString& entry = entries[idx];
         try {
             QString full_path = dir.absoluteFilePath(entry);
             QFileInfo info(full_path);
@@ -494,7 +506,14 @@ void StandaloneFileTinderDialog::scan_files() {
         } catch (const std::exception& ex) {
             LOG_ERROR("BasicMode", QString("Error scanning file %1: %2").arg(entry, ex.what()));
         }
+        
+        if (progress && (idx % 50 == 0)) {
+            progress->setValue(idx);
+            QApplication::processEvents();
+        }
     }
+    
+    delete progress;
     
     LOG_INFO("BasicMode", QString("Scanned %1 files from %2").arg(files_.size()).arg(source_folder_));
     
@@ -618,16 +637,22 @@ void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
                                           "color: #3498db; font-weight: bold;'>%1</span>").arg(icon));
     }
     
-    // For images, show preview (but not a separate window)
+    // For images, use QImageReader with scaled size for efficient loading
+    // (avoids loading full resolution into memory, then scaling — much faster for large images)
     if (type.startsWith("image/") && !finfo.isDir()) {
-        QPixmap pixmap(file_path);
-        if (!pixmap.isNull()) {
-            // Scale to fit the preview area
+        QImageReader reader(file_path);
+        if (reader.canRead()) {
             int max_w = preview_label_->width() > 100 ? preview_label_->width() - 20 : 400;
             int max_h = preview_label_->height() > 100 ? preview_label_->height() - 20 : 300;
-            pixmap = pixmap.scaled(max_w, max_h, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            preview_label_->setPixmap(pixmap);
-            return;
+            QSize orig = reader.size();
+            if (orig.isValid()) {
+                reader.setScaledSize(orig.scaled(max_w, max_h, Qt::KeepAspectRatio));
+            }
+            QImage img = reader.read();
+            if (!img.isNull()) {
+                preview_label_->setPixmap(QPixmap::fromImage(img));
+                return;
+            }
         }
     }
     
@@ -678,9 +703,21 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
                        (file.extension.isEmpty() ? "Unknown" : file.extension.toUpper());
     
     if (!file_info_label_) return;
+    
+    // Duplicate detection: check if any other file shares name and size
+    QString dup_warning;
+    if (!file.is_directory) {
+        for (const auto& other : files_) {
+            if (&other != &file && other.name == file.name && other.size == file.size) {
+                dup_warning = "<br><span style='color: #e74c3c; font-size: 11px;'>⚠ Possible duplicate found</span>";
+                break;
+            }
+        }
+    }
+    
     file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
-                                      "<span style='color: #95a5a6;'>%2 | %3 | %4</span>")
-                              .arg(file.name, size_str, type_str, file.modified_date));
+                                      "<span style='color: #95a5a6;'>%2 | %3 | %4</span>%5")
+                              .arg(file.name, size_str, type_str, file.modified_date, dup_warning));
     
     // Prominent file size badge
     if (size_badge_label_) {
@@ -792,6 +829,12 @@ void StandaloneFileTinderDialog::on_keep() {
         // Record for undo
         record_action(file_idx, old_decision, "keep");
         
+        // Visual feedback: brief flash on stats
+        if (progress_label_) {
+            progress_label_->setText(QString("<span style='color: %1;'>✓ Kept: %2</span>")
+                .arg(ui::colors::kKeepColor, file.name));
+        }
+        
         animate_swipe(true);
         advance_to_next();
     } catch (const std::exception& ex) {
@@ -820,6 +863,12 @@ void StandaloneFileTinderDialog::on_delete() {
         // Record for undo
         record_action(file_idx, old_decision, "delete");
         
+        // Visual feedback
+        if (progress_label_) {
+            progress_label_->setText(QString("<span style='color: %1;'>✗ Deleted: %2</span>")
+                .arg(ui::colors::kDeleteColor, file.name));
+        }
+        
         animate_swipe(true);
         advance_to_next();
     } catch (const std::exception& ex) {
@@ -847,6 +896,12 @@ void StandaloneFileTinderDialog::on_skip() {
         
         // Record for undo
         record_action(file_idx, old_decision, "skip");
+        
+        // Visual feedback
+        if (progress_label_) {
+            progress_label_->setText(QString("<span style='color: %1;'>↓ Skipped: %2</span>")
+                .arg(ui::colors::kSkipColor, file.name));
+        }
         
         animate_swipe(true);
         advance_to_next();
@@ -1144,6 +1199,24 @@ void StandaloneFileTinderDialog::show_review_summary() {
     files_label->setStyleSheet("font-weight: bold; margin-top: 10px;");
     layout->addWidget(files_label);
     
+    // Bulk action toolbar
+    auto* bulk_bar = new QHBoxLayout();
+    bulk_bar->addWidget(new QLabel("Bulk:"));
+    auto* bulk_keep_btn = new QPushButton("All Keep");
+    bulk_keep_btn->setMaximumWidth(70);
+    bulk_keep_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    bulk_bar->addWidget(bulk_keep_btn);
+    auto* bulk_skip_btn = new QPushButton("All Skip");
+    bulk_skip_btn->setMaximumWidth(70);
+    bulk_skip_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    bulk_bar->addWidget(bulk_skip_btn);
+    auto* bulk_pending_btn = new QPushButton("All Pending");
+    bulk_pending_btn->setMaximumWidth(80);
+    bulk_pending_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    bulk_bar->addWidget(bulk_pending_btn);
+    bulk_bar->addStretch();
+    layout->addLayout(bulk_bar);
+    
     auto* table = new QTableWidget();
     table->setColumnCount(4);
     table->setHorizontalHeaderLabels({"File", "Decision", "Destination", "Mode"});
@@ -1233,6 +1306,26 @@ void StandaloneFileTinderDialog::show_review_summary() {
     table->resizeColumnsToContents();
     table->setColumnWidth(0, qMax(table->columnWidth(0), 200));
     layout->addWidget(table, 1);
+    
+    // Connect bulk action buttons
+    connect(bulk_keep_btn, &QPushButton::clicked, this, [table]() {
+        for (int r = 0; r < table->rowCount(); ++r) {
+            auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (combo) combo->setCurrentText("keep");
+        }
+    });
+    connect(bulk_skip_btn, &QPushButton::clicked, this, [table]() {
+        for (int r = 0; r < table->rowCount(); ++r) {
+            auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (combo) combo->setCurrentText("skip");
+        }
+    });
+    connect(bulk_pending_btn, &QPushButton::clicked, this, [table]() {
+        for (int r = 0; r < table->rowCount(); ++r) {
+            auto* combo = qobject_cast<QComboBox*>(table->cellWidget(r, 1));
+            if (combo) combo->setCurrentText("pending");
+        }
+    });
     
     // Folder creation note
     int new_folder_count = 0;
@@ -1812,12 +1905,25 @@ void StandaloneFileTinderDialog::apply_filter(FileFilterType filter) {
     
     rebuild_filtered_indices();
     
-    // Find first pending file in new filter
-    current_filtered_index_ = 0;
-    for (size_t i = 0; i < filtered_indices_.size(); ++i) {
-        if (files_[filtered_indices_[i]].decision == "pending") {
-            current_filtered_index_ = static_cast<int>(i);
-            break;
+    // Stay on current file if it matches the new filter, otherwise find first pending
+    int prev_file_idx = get_current_file_index();
+    bool found_current = false;
+    if (prev_file_idx >= 0) {
+        for (size_t i = 0; i < filtered_indices_.size(); ++i) {
+            if (filtered_indices_[i] == prev_file_idx) {
+                current_filtered_index_ = static_cast<int>(i);
+                found_current = true;
+                break;
+            }
+        }
+    }
+    if (!found_current) {
+        current_filtered_index_ = 0;
+        for (size_t i = 0; i < filtered_indices_.size(); ++i) {
+            if (files_[filtered_indices_[i]].decision == "pending") {
+                current_filtered_index_ = static_cast<int>(i);
+                break;
+            }
         }
     }
     
@@ -1977,15 +2083,14 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <tr><td><span class='key'>→</span> Right Arrow</td><td>Keep file in original location</td></tr>
 <tr><td><span class='key'>←</span> Left Arrow</td><td>Mark file for deletion</td></tr>
 <tr><td><span class='key'>↓</span> Down Arrow</td><td>Skip file (no action)</td></tr>
-<tr><td><span class='key'>↑</span> Up Arrow</td><td>Go back to previous file</td></tr>
 <tr><td><span class='key'>Z</span></td><td>Undo last action</td></tr>
-<tr><td><span class='key'>P</span></td><td>Open image preview in separate window</td></tr>
+<tr><td><span class='key'>P</span></td><td>Toggle file preview</td></tr>
 <tr><td><span class='key'>Enter</span></td><td>Finish review and execute</td></tr>
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
 <tr><td><span class='key'>Esc</span></td><td>Close dialog</td></tr>
 </table>
 <br>
-<b>Tip:</b> Use the filter dropdown to filter by file type (Images, Videos, etc.) or specify custom extensions.
+<b>Tip:</b> Use the search box to jump to a file by name. Right-click file name for more options.
 )";
     
     help_dialog.setTextFormat(Qt::RichText);

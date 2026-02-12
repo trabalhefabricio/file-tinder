@@ -73,6 +73,7 @@ private:
     QString chosen_path_;
     QLabel* path_indicator_;
     QListWidget* recent_list_ = nullptr;
+    bool skip_stats_on_next_launch_ = false;  // Skip stats dashboard on mode switch
     
     bool eventFilter(QObject* obj, QEvent* event) override {
         if (recent_list_ && obj == recent_list_->viewport() && event->type() == QEvent::MouseButtonPress) {
@@ -368,7 +369,12 @@ private:
     
     void launch_basic() {
         if (!validate_folder()) return;
-        if (!show_pre_session_stats()) return;
+        // Skip stats dashboard on mode switch (already shown once)
+        if (skip_stats_on_next_launch_) {
+            skip_stats_on_next_launch_ = false;
+        } else {
+            if (!show_pre_session_stats()) return;
+        }
         
         LOG_INFO("Launcher", "Starting basic mode");
         
@@ -376,6 +382,7 @@ private:
         
         connect(dlg, &StandaloneFileTinderDialog::switch_to_advanced_mode, this, [this, dlg]() {
             dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
             // Defer mode switch to break recursive exec() chain
             QTimer::singleShot(0, this, &FileTinderLauncher::launch_advanced);
         });
@@ -387,7 +394,12 @@ private:
     
     void launch_advanced() {
         if (!validate_folder()) return;
-        if (!show_pre_session_stats()) return;
+        // Skip stats dashboard on mode switch (already shown once)
+        if (skip_stats_on_next_launch_) {
+            skip_stats_on_next_launch_ = false;
+        } else {
+            if (!show_pre_session_stats()) return;
+        }
         
         LOG_INFO("Launcher", "Starting advanced mode");
         
@@ -395,6 +407,7 @@ private:
         
         connect(dlg, &AdvancedFileTinderDialog::switch_to_basic_mode, this, [this, dlg]() {
             dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
             // Defer mode switch to break recursive exec() chain
             QTimer::singleShot(0, this, &FileTinderLauncher::launch_basic);
         });

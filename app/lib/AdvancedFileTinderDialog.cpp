@@ -43,7 +43,7 @@ AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
     , filter_widget_(nullptr)
     , folder_model_(nullptr) {
     
-    setWindowTitle("File Tinder - Advanced Mode");
+    setWindowTitle(QString("File Tinder - Advanced Mode — %1").arg(QFileInfo(source_folder).fileName()));
     setMinimumWidth(ui::scaling::scaled(ui::dimensions::kAdvancedFileTinderMinWidth));
 }
 
