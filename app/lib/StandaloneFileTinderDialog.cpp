@@ -1814,14 +1814,17 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         preview_label_->setGraphicsEffect(effect);
     }
     
-    // If animation is running, just reset opacity and skip — prevents crash on rapid clicks
-    if (swipe_animation_ && swipe_animation_->state() == QAbstractAnimation::Running) {
-        swipe_animation_->stop();
-        effect->setOpacity(1.0);
+    // If animation is running, stop it and reset opacity
+    if (swipe_animation_) {
+        if (swipe_animation_->state() == QAbstractAnimation::Running) {
+            swipe_animation_->stop();  // triggers DeleteWhenStopped
+            effect->setOpacity(1.0);
+        } else {
+            // Animation exists but not running (finished handler may not have fired yet)
+            delete swipe_animation_;
+        }
+        swipe_animation_ = nullptr;
     }
-    
-    // Clean up previous animation (stop() + DeleteWhenStopped already deleted it, so null the ptr)
-    swipe_animation_ = nullptr;
     
     // Create new animation owned by 'this' for safe lifetime
     swipe_animation_ = new QPropertyAnimation(effect, "opacity", this);

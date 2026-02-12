@@ -10,6 +10,8 @@
 #include <QMenu>
 #include <QInputDialog>
 #include <QFileDialog>
+#include <QListView>
+#include <QTreeView>
 #include <QMessageBox>
 #include <QProgressDialog>
 #include <QGroupBox>
@@ -429,10 +431,18 @@ void AdvancedFileTinderDialog::prompt_add_folder() {
     });
     
     menu.addAction("Add Existing Folder(s)...", [this]() {
-        // Use native dialog that supports multi-select via QFileDialog
+        // Use non-native dialog to support multi-select
         QFileDialog dlg(this, "Select Folder(s)", source_folder_);
         dlg.setFileMode(QFileDialog::Directory);
         dlg.setOption(QFileDialog::ShowDirsOnly, true);
+        dlg.setOption(QFileDialog::DontUseNativeDialog, true);
+        // Enable multi-selection in the file list view
+        if (auto* list_view = dlg.findChild<QListView*>("listView")) {
+            list_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
+        }
+        if (auto* tree_view = dlg.findChild<QTreeView*>()) {
+            tree_view->setSelectionMode(QAbstractItemView::ExtendedSelection);
+        }
         
         if (dlg.exec() == QDialog::Accepted) {
             QStringList folders = dlg.selectedFiles();

@@ -152,9 +152,6 @@ void MindMapView::set_model(FolderTreeModel* model) {
 void MindMapView::refresh_layout() {
     if (!model_) return;
     
-    // Save existing grid positions before clearing
-    QMap<QString, QPair<int, int>> saved_positions = grid_positions_;
-    
     // Clear existing
     buttons_.clear();
     add_button_ = nullptr;
