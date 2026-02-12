@@ -80,6 +80,7 @@ private:
     int next_row_;
     int next_col_;
     int max_rows_per_col_ = 6;  // Configurable items per column before wrapping
+    bool compact_mode_ = true;  // Compact (small) vs expanded (wider) folder buttons
     
     void build_grid();
     void place_folder_node(FolderNode* node);
@@ -87,6 +88,8 @@ private:
 public:
     void set_max_rows_per_col(int rows) { max_rows_per_col_ = qMax(1, rows); }
     int max_rows_per_col() const { return max_rows_per_col_; }
+    void set_compact_mode(bool compact) { compact_mode_ = compact; }
+    bool compact_mode() const { return compact_mode_; }
 };
 
 #endif // MIND_MAP_VIEW_HPP

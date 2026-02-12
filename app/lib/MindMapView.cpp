@@ -38,10 +38,10 @@ void FolderButton::update_display() {
         count_str = QString(" (%1)").arg(node_->assigned_file_count);
     }
     
-    // Truncate long names to fit compact button width
-    static const int kMaxDisplayNameLength = 12;
-    if (name.length() > kMaxDisplayNameLength) {
-        name = name.left(kMaxDisplayNameLength - 1) + "…";
+    // Truncate long names to fit button width (wider buttons show more text)
+    int max_len = qMax(8, width() / 9);
+    if (name.length() > max_len) {
+        name = name.left(max_len - 1) + "…";
     }
     
     setText(name + count_str);
@@ -188,14 +188,19 @@ void MindMapView::build_grid() {
     
     FolderNode* root = model_->root_node();
     
+    // Button dimensions based on display mode
+    int btn_w = compact_mode_ ? ui::scaling::scaled(120) : ui::scaling::scaled(180);
+    int btn_h = compact_mode_ ? ui::scaling::scaled(32) : ui::scaling::scaled(36);
+    int font_size = compact_mode_ ? 11 : 12;
+    
     // Root folder in column 0, spanning all rows that children will use
     auto* root_btn = new FolderButton(root, content_widget_);
-    root_btn->setFixedSize(ui::scaling::scaled(120), ui::scaling::scaled(32));
+    root_btn->setFixedSize(btn_w, btn_h);
     root_btn->setStyleSheet(
-        "QPushButton { text-align: center; padding: 2px 6px; "
+        QString("QPushButton { text-align: center; padding: 2px 6px; "
         "background-color: #1a252f; border: 2px solid #3498db; "
-        "border-radius: 4px; color: #3498db; font-weight: bold; font-size: 11px; }"
-        "QPushButton:hover { background-color: #1e2f3d; }"
+        "border-radius: 4px; color: #3498db; font-weight: bold; font-size: %1px; }"
+        "QPushButton:hover { background-color: #1e2f3d; }").arg(font_size)
     );
     buttons_[root->path] = root_btn;
     grid_positions_[root->path] = {0, 0};
@@ -219,6 +224,12 @@ void MindMapView::build_grid() {
 
 void MindMapView::place_folder_node(FolderNode* node) {
     auto* btn = new FolderButton(node, content_widget_);
+    
+    // Apply display mode sizing
+    if (!compact_mode_) {
+        btn->setFixedSize(ui::scaling::scaled(180), ui::scaling::scaled(36));
+    }
+    
     buttons_[node->path] = btn;
     grid_positions_[node->path] = {next_row_, next_col_};
     grid_layout_->addWidget(btn, next_row_, next_col_);

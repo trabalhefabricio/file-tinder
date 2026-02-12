@@ -204,6 +204,21 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     });
     grid_toolbar->addWidget(rows_spin);
     
+    auto* compact_btn = new QPushButton("Compact");
+    compact_btn->setMaximumWidth(70);
+    compact_btn->setCheckable(true);
+    compact_btn->setChecked(true);
+    compact_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    compact_btn->setToolTip("Toggle compact/expanded folder buttons");
+    connect(compact_btn, &QPushButton::toggled, this, [this, compact_btn](bool checked) {
+        compact_btn->setText(checked ? "Compact" : "Expanded");
+        if (mind_map_view_) {
+            mind_map_view_->set_compact_mode(checked);
+            mind_map_view_->refresh_layout();
+        }
+    });
+    grid_toolbar->addWidget(compact_btn);
+    
     grid_toolbar->addStretch();
     
     auto* save_cfg_btn = new QPushButton("Save Grid");
@@ -563,6 +578,10 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
         add_to_quick_access(folder_path);
     });
     
+    menu.addAction("Open Folder", [folder_path]() {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folder_path));
+    });
+    
     // Replace with another folder
     if (folder_path != source_folder_) {
         menu.addAction("Replace with...", [this, folder_path]() {
@@ -733,10 +752,16 @@ void AdvancedFileTinderDialog::update_quick_access_display() {
     
     for (int i = 0; i < quick_access_folders_.size(); ++i) {
         QString path = quick_access_folders_[i];
-        QString label = QString("%1: %2").arg(i == 9 ? 0 : i + 1).arg(QFileInfo(path).fileName());
+        QString folder_name = QFileInfo(path).fileName();
+        // Truncate long names to keep uniform item width
+        if (folder_name.length() > 14) {
+            folder_name = folder_name.left(13) + "…";
+        }
+        QString label = QString("%1: %2").arg(i == 9 ? 0 : i + 1).arg(folder_name);
         auto* item = new QListWidgetItem(label);
         item->setData(Qt::UserRole, path);
         item->setToolTip(path);
+        item->setSizeHint(QSize(ui::scaling::scaled(120), ui::scaling::scaled(28)));
         quick_access_list_->addItem(item);
     }
 }
@@ -1144,12 +1169,13 @@ void AdvancedFileTinderDialog::load_grid_config() {
     QStringList paths = db_.get_grid_config(source_folder_, name);
     if (paths.isEmpty()) return;
     
-    // Clear current tree (except root)
+    // Clear current tree (except root) — remove in reverse order so
+    // children are removed before their parents (avoid double-free)
     if (folder_model_) {
         QStringList current = folder_model_->get_all_folder_paths();
         folder_model_->blockSignals(true);
-        for (const QString& p : current) {
-            folder_model_->remove_folder(p);
+        for (int i = current.size() - 1; i >= 0; --i) {
+            folder_model_->remove_folder(current[i]);
         }
         // Add folders from config
         for (const QString& p : paths) {
@@ -1192,8 +1218,8 @@ void AdvancedFileTinderDialog::reset_grid() {
     }
     
     folder_model_->blockSignals(true);
-    for (const QString& p : current) {
-        folder_model_->remove_folder(p);
+    for (int i = current.size() - 1; i >= 0; --i) {
+        folder_model_->remove_folder(current[i]);
     }
     folder_model_->blockSignals(false);
     

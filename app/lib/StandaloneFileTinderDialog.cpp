@@ -263,11 +263,17 @@ void StandaloneFileTinderDialog::setup_ui() {
     file_icon_label_->setStyleSheet("font-size: 64px;");
     preview_layout->addWidget(file_icon_label_);
     
-    // Preview label (for images/text)
+    // Preview label (for images/text) — wrapped in scroll area to prevent
+    // text previews from expanding the window beyond its intended size
     preview_label_ = new QLabel();
     preview_label_->setAlignment(Qt::AlignCenter);
     preview_label_->setWordWrap(true);
-    preview_layout->addWidget(preview_label_, 1);
+    auto* preview_scroll = new QScrollArea();
+    preview_scroll->setWidget(preview_label_);
+    preview_scroll->setWidgetResizable(true);
+    preview_scroll->setFrameShape(QFrame::NoFrame);
+    preview_scroll->setStyleSheet("QScrollArea { background: transparent; }");
+    preview_layout->addWidget(preview_scroll, 1);
     
     // File name and info below preview — double-click to open
     file_info_label_ = new QLabel();
@@ -430,6 +436,9 @@ void StandaloneFileTinderDialog::setup_ui() {
         "QLineEdit:focus { border: 2px solid #3498db; }"
     );
     connect(search_box_, &QLineEdit::textChanged, this, &StandaloneFileTinderDialog::on_search);
+    connect(search_box_, &QLineEdit::returnPressed, this, [this]() {
+        on_search(search_box_->text());
+    });
     bottom_layout->addWidget(search_box_);
     
     bottom_layout->addSpacing(10);
@@ -619,8 +628,9 @@ void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
     // Clear previous content
     if (file_icon_label_) file_icon_label_->clear();
     preview_label_->clear();
-    // Reset style from any previous text file preview
+    // Reset style and alignment from any previous text file preview
     preview_label_->setStyleSheet("");
+    preview_label_->setAlignment(Qt::AlignCenter);
     
     // Determine icon for the file type (always shown centered)
     QString icon = "[FILE]";
@@ -679,6 +689,7 @@ void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
                 content += "\n...(truncated)";
             }
             preview_label_->setText(content);
+            preview_label_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
             preview_label_->setStyleSheet("color: #ecf0f1; font-family: monospace; font-size: 11px;");
             return;
         }
@@ -2109,8 +2120,13 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 void StandaloneFileTinderDialog::on_search(const QString& text) {
     if (text.isEmpty()) return;
     
-    // Find file matching search text in filtered list
-    for (int i = 0; i < static_cast<int>(filtered_indices_.size()); ++i) {
+    int count = static_cast<int>(filtered_indices_.size());
+    if (count == 0) return;
+    
+    // Search forward from the position after the current one, wrapping around
+    int start = (current_filtered_index_ + 1) % count;
+    for (int offset = 0; offset < count; ++offset) {
+        int i = (start + offset) % count;
         const auto& file = files_[filtered_indices_[i]];
         if (file.name.contains(text, Qt::CaseInsensitive)) {
             current_filtered_index_ = i;
