@@ -1,12 +1,10 @@
-# File Tinder AI Mode — Design Proposal
+# File Tinder AI Mode — Design Proposal (v2)
 
-## The Question
+## Core Concept
 
-> How would you conceptualize an AI mode that works similar but differently than advanced mode?
+AI Mode is a **third mode that works in tandem with Basic and Advanced**. It looks like Advanced Mode at its core — the mind map grid and quick access bar are the stars — but an AI engine drives the sorting, either fully (Auto) or as a smart assistant (Semi).
 
-## Answer: AI Mode as a "Suggestion-First" Workflow
-
-The core insight is this: **Basic Mode is manual-sequential, Advanced Mode is manual-spatial, and AI Mode should be automatic-confirmational.** Instead of you deciding where each file goes one-by-one, the AI pre-sorts *everything* and you review its work — accepting, correcting, or overriding suggestions in bulk.
+The user clicks an **AI button** that opens a configuration dialog. The AI then analyzes every file individually using taxonomy rules, contextualizing each file precisely (e.g., "Serum" isn't just a `.dll` — it's a VST plugin, specifically a generator synth). After analysis, the user either reviews AI decisions on the review screen (Auto) or gets AI-highlighted folder suggestions per file in the Advanced-style view (Semi).
 
 ---
 
@@ -14,143 +12,288 @@ The core insight is this: **Basic Mode is manual-sequential, Advanced Mode is ma
 
 | Aspect | Basic Mode | Advanced Mode | AI Mode |
 |--------|-----------|---------------|---------|
-| **Who decides** | You, one file at a time | You, with folder tree visible | AI suggests, you confirm |
-| **File order** | Sequential (by filter/sort) | Sequential (by filter/sort) | Grouped by AI category |
-| **Primary action** | Swipe: Keep/Delete/Skip | Click folder to assign | Accept/Reject AI suggestion |
-| **Mental model** | "What do I do with this file?" | "Which folder does this go to?" | "Did the AI get this right?" |
-| **Speed** | ~2-5 seconds per file | ~1-3 seconds per file | ~0.5s per file (bulk confirm) |
-| **Best for** | Small folders, simple cleanup | Complex folder structures | Large folders (100+ files), initial sort |
-
-The key difference: **you never start from a blank decision.** Every file already has a suggested action when you see it.
+| **Who decides** | You, one file at a time | You, with folder tree visible | AI decides (Auto) or suggests (Semi) |
+| **UI style** | Swipe cards | Mind map + quick access | Same as Advanced, plus AI setup dialog |
+| **Primary action** | Swipe: Keep/Delete/Skip | Click folder to assign | Auto: review AI plan / Semi: pick from highlighted folders |
+| **Intelligence** | None | User-driven | Taxonomy-aware AI with contextual understanding |
+| **Best for** | Simple cleanup | Complex folder structures | Large folders, precision sorting, domain-specific organization |
 
 ---
 
-## UI Concept
+## The AI Setup Dialog
+
+When the user clicks the **🤖 AI** button in AI mode, a configuration dialog appears:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                    FILE TINDER — AI MODE                                     │
-├──────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  AI Confidence: ████████████░░░░ 78% overall  │  [Re-analyze] [Settings ⚙]  │
-│                                                                              │
-│  ┌─ Category: "Vacation Photos" (34 files) ──────────── Confidence: 92% ─┐  │
-│  │                                                                        │  │
-│  │  ✅ IMG_2041.jpg  3.2MB  →  Images/Vacation     [✓ Accept] [✗ Change]  │  │
-│  │  ✅ IMG_2042.jpg  2.8MB  →  Images/Vacation     [✓ Accept] [✗ Change]  │  │
-│  │  ✅ beach.png     1.1MB  →  Images/Vacation     [✓ Accept] [✗ Change]  │  │
-│  │  ⚠️  notes.txt    4KB    →  Documents/Travel    [✓ Accept] [✗ Change]  │  │
-│  │  ...                                                                    │  │
-│  │                                                                        │  │
-│  │  [✓ Accept All 34] [✗ Reject Category] [📁 Change Destination]         │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│  ┌─ Category: "Work Documents" (18 files) ───────────── Confidence: 85% ─┐  │
-│  │  ✅ report_Q3.pdf    1.4MB  →  Documents/Work   [✓ Accept] [✗ Change] │  │
-│  │  ✅ slides.pptx      8.2MB  →  Documents/Work   [✓ Accept] [✗ Change] │  │
-│  │  ⚠️  budget.xlsx     245KB  →  Documents/Work   [✓ Accept] [✗ Change] │  │
-│  │  ...                                                                    │  │
-│  │  [✓ Accept All 18] [✗ Reject Category] [📁 Change Destination]         │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│  ┌─ Category: "Delete Candidates" (45 files) ────────── Confidence: 71% ─┐  │
-│  │  🗑️  .DS_Store       4KB    →  DELETE            [✓ Accept] [✗ Keep]   │  │
-│  │  🗑️  thumbs.db       12KB   →  DELETE            [✓ Accept] [✗ Keep]   │  │
-│  │  ⚠️  old_draft.docx  340KB  →  DELETE            [✓ Accept] [✗ Keep]   │  │
-│  │  ...                                                                    │  │
-│  │  [✓ Accept All 45] [✗ Keep All] [👁 Review One-by-One]                  │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│  ┌─ Unsure (12 files) ───────────────────────────── Confidence: <50%  ───┐  │
-│  │  ❓ random_file.bin   890KB  →  ???              [Decide manually]      │  │
-│  │  ❓ screenshot_3.png  1.2MB  →  ???              [Decide manually]      │  │
-│  │  ...                                                                    │  │
-│  │  [Open in Basic Mode] [Open in Advanced Mode]                           │  │
-│  └────────────────────────────────────────────────────────────────────────┘  │
-│                                                                              │
-│  ═══════════════════════════════════════════════════════════════════════════  │
-│  Accepted: 52/109  │  Changed: 8  │  Remaining: 49                          │
-│                                                                              │
-│  [← Back to Launcher]                              [Execute Accepted ✓]     │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                  🤖 AI Sorting Setup                         │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─ AI Provider ──────────────────────────────────────────┐  │
+│  │  Provider: [OpenAI          ▼]                         │  │
+│  │  API Key:  [sk-••••••••••••••••••••••]                 │  │
+│  │  Endpoint: [https://api.openai.com/v1/chat/completions]│  │
+│  │  Model:    [gpt-4o-mini     ▼]     (user picks always) │  │
+│  │  Rate:     [60] req/min                                │  │
+│  │                                                        │  │
+│  │  Providers: OpenAI | Anthropic | Gemini | Mistral |    │  │
+│  │  Groq | OpenRouter | Ollama (Local) | LM Studio |     │  │
+│  │  Custom endpoint                                       │  │
+│  │                                                        │  │
+│  │  [Smart rate limiting: auto-adjusts for paid vs free]  │  │
+│  │  [Keys stored locally across sessions]                 │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌─ Sorting Mode ─────────────────────────────────────────┐  │
+│  │  ○ Auto — AI sorts all files → review screen           │  │
+│  │  ● Semi — AI suggests [3 ▼] folders per file (2-5)     │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌─ Category Handling ────────────────────────────────────┐  │
+│  │  [Keep existing categories           ▼]                │  │
+│  │                                                        │  │
+│  │  • Keep existing: sort into your current folders       │  │
+│  │  • Generate new: replace with AI-created categories    │  │
+│  │  • Synthesize new: blend your intent + AI analysis     │  │
+│  │  • Keep + Generate: keep current, add new ones too     │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌─ Category Depth ───────────────────────────────────────┐  │
+│  │  Subcategory depth: [2 ▼] levels (1-3)                 │  │
+│  │                                                        │  │
+│  │  Depth 1: Images/                                      │  │
+│  │  Depth 2: Images/Vacation/                             │  │
+│  │  Depth 3: Images/Vacation/Beach/                       │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ┌─ What is this folder for? (optional) ──────────────────┐  │
+│  │  ┌──────────────────────────────────────────────────┐  │  │
+│  │  │ This is my music production folder. I want       │  │  │
+│  │  │ plugins sorted by type (generators vs effects),  │  │  │
+│  │  │ samples by instrument, and projects by client.   │  │  │
+│  │  └──────────────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────┘  │
+│                                                              │
+│  ⚠️ Cost estimate: ~$0.04 for 200 files (gpt-4o-mini)       │
+│  (shown only for paid API providers)                         │
+│                                                              │
+│                              [Cancel]  [OK — Start Sorting]  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### The Flow
+### Setup Dialog Fields
 
-1. **Scan & Analyze**: On launch, AI Mode scans all files and runs classification. A progress dialog shows "Analyzing 342 files..." with a progress bar. This takes a few seconds.
+1. **AI Provider**: Dropdown with presets (OpenAI, Anthropic, Google Gemini, Mistral, Groq, OpenRouter, Ollama, LM Studio, Custom). Selecting a preset auto-fills endpoint, default model, and rate limits. Keys are stored locally in the DB and persist across sessions.
 
-2. **Present Grouped Results**: Files appear grouped by AI-determined category, not one-at-a-time. Each category shows a confidence score and suggested destination.
+2. **Model selector**: Always visible — user picks the specific model at all times. Pre-populated with sensible defaults per provider but fully editable.
 
-3. **Bulk Accept/Reject**: The user's primary action is "Accept All" on high-confidence categories — potentially sorting 50+ files in one click. Low-confidence files get individual attention.
+3. **Smart rate limiting**: Auto-detects paid vs free tiers. Paid APIs get higher default RPM; free/local get conservative limits. User can always override.
 
-4. **Fallback to Manual**: The "Unsure" category at the bottom contains files the AI couldn't classify confidently. Buttons let you send these to Basic or Advanced mode for manual sorting.
+4. **Mode — Auto vs Semi**:
+   - **Auto**: AI assigns every file to a folder. User goes straight to the review screen. The review screen shows an "AI" label in the mode column, and destinations are editable like Advanced mode decisions.
+   - **Semi**: AI returns the top N best-match folders per file (N = 2 to 5, user picks via spinner). In the main view, the selected file's N suggested folders **light up** in the mind map grid AND appear at the top of the quick access bar. User clicks whichever one to assign. It's semi-automated Advanced mode.
 
-5. **Execute**: Same review & execute flow as Basic/Advanced modes.
+5. **Categories**:
+   - **Keep existing**: AI sorts files into the folder tree that already exists.
+   - **Generate new**: AI creates entirely new category folders (in the source folder root, up to the chosen depth), replacing existing ones.
+   - **Synthesize new**: AI analyzes the existing folder structure's *intent* and creates improved categories that blend that intent with fresh file analysis.
+   - **Keep + Generate**: Keeps existing folders and adds new AI-generated ones alongside them.
+
+6. **Category Depth** (1-3 levels): Controls how deep the AI creates subcategories. Depth 1 = flat (Images/), Depth 2 = one level of sub (Images/Vacation/), Depth 3 = two levels of sub (Images/Vacation/Beach/).
+
+7. **Folder Purpose** (optional): Free-text prompt where the user describes the folder's purpose. This contextualizes the AI's sorting — "music production folder" produces very different categories than "downloads folder."
+
+8. **Cost estimate**: Shown **only for paid APIs**. Calculates approximate token cost based on file count and model pricing. Warns user before they proceed.
 
 ---
 
-## How the AI Classification Works (Without External APIs)
-
-The AI mode doesn't need a neural network or cloud API. It uses **rule-based heuristics enhanced with learned patterns** — entirely local, entirely offline:
-
-### Tier 1: Metadata Rules (Instant, 100% local)
+## Auto Mode Flow
 
 ```
-MIME type → Category mapping:
-  image/*         → "Images"
-  video/*         → "Videos"  
-  audio/*         → "Audio"
-  text/*, *pdf*, *document*  → "Documents"
-  *zip*, *archive*           → "Archives"
-
-Filename pattern rules:
-  .DS_Store, Thumbs.db, desktop.ini     → "Delete: System Junk"
-  *.tmp, *.bak, ~*                      → "Delete: Temporary Files"
-  Screenshot*, Screen Shot*             → "Images/Screenshots"
-  IMG_*, DSC_*, DCIM*                   → "Images/Camera"
-  *.log                                 → "Delete: Log Files"
-
-Size-based rules:
-  0 bytes                               → "Delete: Empty Files"
-  Exact duplicate (same name+size)      → "Delete: Duplicates" (reuses existing has_duplicate flag from scan)
+User clicks AI → Setup dialog → OK
+        ↓
+   Loading screen with real-time log
+   "Analyzing file 42/200: serum_installer.exe"
+   "Batch 1/4 sent to API..."
+   "Batch 1/4 complete — 50 files classified"
+   ...
+        ↓
+   ┌─ If API fails mid-batch ──────────────────────┐
+   │  Dialog: "API error after 100/200 files.       │
+   │  [Abort] [Continue to Review with 100 files]"  │
+   └────────────────────────────────────────────────┘
+        ↓
+   Review screen (same as Basic/Advanced)
+   - Mode column shows "AI" for AI-sorted files
+   - Destination column is editable (combo dropdown like Advanced mode)
+   - User can change any decision before executing
+        ↓
+   Execute
 ```
 
-### Tier 2: Content-Aware Grouping (Local analysis)
+### Review Screen Integration
+
+The review screen gains a third mode label: **"AI"** alongside "Basic" and "Advanced". AI-sorted files show "AI" in the mode column. The destination dropdown works exactly like Advanced mode — all grid folders are available for reassignment. This is a small but important integration point showing all three modes work together.
+
+---
+
+## Semi Mode Flow
 
 ```
-Date clustering:
-  Files modified within the same week → group together
-  "January 2024 files", "Last week's downloads"
-
-Name similarity:
-  report_v1.docx, report_v2.docx, report_final.docx → "Document Versions"
-  IMG_2041.jpg through IMG_2089.jpg → "Photo Series (48 photos)"
-
-Extension grouping:
-  All .py files → "Code/Python"
-  All .jsx/.tsx files → "Code/React"
+User clicks AI → Setup dialog → OK
+        ↓
+   Loading screen (same real-time log)
+        ↓
+   Back to AI mode view (looks like Advanced mode)
+   - File shown in info panel
+   - N folders LIGHT UP in the mind map grid (highlighted borders)
+   - Same N folders appear at TOP of quick access bar (styled distinctly)
+   - Confidence ranking: 1st suggestion = brightest highlight, 2nd dimmer, etc.
+        ↓
+   User clicks any folder (highlighted or not) to assign
+   OR uses quick access shortcuts (1-0)
+        ↓
+   Next file — new highlights appear
+        ↓
+   Finish → Review → Execute
 ```
 
-### Tier 3: Learned Patterns (From user history)
+### Semi Mode Visual Behavior
+
+- **Mind map**: The AI's N suggested folders get a distinct highlight style (e.g., glowing blue border, brighter than the normal selected style). The best match gets the strongest highlight; subsequent matches get progressively dimmer.
+- **Quick access bar**: AI suggestions are inserted at the top of the list with an "AI 1:", "AI 2:", etc. prefix and a distinct background color (#1a3a5c with #3498db text). They sit above the user's pinned quick access items.
+- **No restriction**: The user can click ANY folder, not just the highlighted ones. If none of the AI suggestions are right, they just click the correct folder as in normal Advanced mode.
+- **Re-run AI button**: After manually sorting some files, the user can re-run AI on remaining unsorted files. Useful if early corrections help the AI learn within the session.
+
+### "View AI Reasoning" Tooltip
+
+Each file in semi mode has a small info icon or tooltip that shows the AI's reasoning: *"JPEG image, name pattern matches vacation photos, EXIF date within beach trip window → Images/Vacation (92% confidence)"*. Builds trust and helps the user understand when the AI is right or wrong.
+
+---
+
+## File Investigation: Taxonomy-Aware Analysis
+
+The AI doesn't just look at extension and MIME type. It **investigates what each file actually is** using taxonomy rules:
+
+### What the AI Analyzes Per File
+
+| Data Point | Example | Purpose |
+|-----------|---------|---------|
+| File name | `Serum_x64.dll` | Identify product/software name |
+| Extension | `.dll` | File type |
+| MIME type | `application/x-dosexec` | Technical classification |
+| Size | 47.2 MB | Large DLL = likely a plugin |
+| Name + extension + size combined | `Serum_x64.dll`, 47MB | "This is Serum, a VST synthesizer plugin (generator type)" |
+
+### Taxonomy Precision Examples
 
 ```
-Session learning:
-  "User previously moved *.pdf from Downloads to Documents/Receipts"
-  "User keeps files >10MB, deletes files <1KB in this folder"
-  "User always deletes .tmp files"
-  
-Cross-session patterns:
-  Track decision frequency per (extension, size_bucket, source_folder)
-  Build a simple decision table over time
+File: Serum_x64.dll (47MB)
+  → NOT just "DLL file"
+  → Serum is audio software, VST plugin category, generator subtype
+  → Suggested folder: Plugins/Generators/
+
+File: receipt_2024_03_15.pdf (120KB)
+  → NOT just "PDF document"
+  → Receipt (financial document), dated March 2024
+  → Suggested folder: Documents/Receipts/2024/
+
+File: IMG_4521.HEIC (3.2MB)
+  → NOT just "Image file"
+  → iPhone photo, HEIC format, likely personal photo
+  → Suggested folder: Images/Photos/
+
+File: jest.config.ts (2KB)
+  → NOT just "TypeScript file"
+  → Jest testing configuration, part of a JavaScript project
+  → Suggested folder: Code/Config/
 ```
 
-### Confidence Scoring
+The AI prompt instructs the LLM to investigate each file's identity in relation to the available categories, not just slot it by extension.
+
+---
+
+## Batch Processing & API Engineering
+
+### Batching Strategy
+
+Files are sent to the API in batches to stay within token limits:
 
 ```
-High (>80%):   MIME-based category + name matches known pattern
-Medium (50-80): MIME matches but name is ambiguous
-Low (<50%):    Unknown extension, no pattern match, conflicting signals
+Total files: 500
+Batch size: ~50 files per API call (adjustable based on model context window)
+Batches: 10 API calls
+
+Per batch:
+  - Send file metadata (name, ext, MIME, size) for 50 files
+  - Send available folder list
+  - Send category mode + depth + folder purpose
+  - Receive: JSON array of assignments
+
+Between batches:
+  - Update progress: "Batch 3/10 complete — 150/500 files classified"
+  - Check rate limit before next call
+  - If user cancelled, stop and present partial results
 ```
+
+### Real-Time Logging
+
+The loading screen shows live progress for all cases:
+
+```
+[12:04:01] Starting AI analysis of 342 files...
+[12:04:01] Provider: OpenAI (gpt-4o-mini) | Rate: 60 req/min
+[12:04:01] Category mode: Synthesize new | Depth: 2
+[12:04:02] Batch 1/7 — analyzing files 1-50...
+[12:04:04] Batch 1/7 complete — 50 files classified (2.1s)
+[12:04:04] Batch 2/7 — analyzing files 51-100...
+[12:04:06] Batch 2/7 complete — 100 files classified (1.8s)
+[12:04:06] ⚠️ Rate limit: waiting 1.2s before next request...
+[12:04:08] Batch 3/7 — analyzing files 101-150...
+...
+[12:04:18] ✅ Analysis complete — 342 files classified into 12 categories
+[12:04:18] New folders to create: 5 | Existing folders used: 7
+```
+
+### Error Recovery
+
+If the API fails mid-batch:
+
+```
+[12:04:12] ❌ Batch 5/7 failed: 429 Too Many Requests
+           "Rate limit exceeded. Please try again in 30s."
+
+┌──────────────────────────────────────────────────┐
+│  AI analysis interrupted after 200/342 files.    │
+│                                                  │
+│  200 files have been classified.                 │
+│  142 files remain unclassified.                  │
+│                                                  │
+│  [Abort — discard all results]                   │
+│  [Continue to Review — with 200 classified files]│
+└──────────────────────────────────────────────────┘
+```
+
+User chooses: abort (discard everything) or proceed to review with partial results (unclassified files remain "pending").
+
+### Local LLM Handling
+
+For Ollama/LM Studio (local models that may be slower):
+
+- **Streaming/progressive display**: Show results as they come in, file by file
+- **No cost warning** (it's free)
+- **Higher batch patience**: Allow 30+ seconds per batch before timeout
+- **Progress shows ETA**: "Estimated 2 min remaining (7B model on CPU)"
+
+### Response Parsing Robustness
+
+LLMs don't always return clean JSON. Parsing strategy:
+
+1. **Try JSON parse** on the full response
+2. **Extract JSON array** from surrounding text (find `[` ... `]`)
+3. **Line-by-line fallback**: If JSON fails, try parsing individual lines as `index|folder|reasoning`
+4. **Partial success**: If 45/50 files in a batch parse correctly, accept those 45 and log the 5 failures
+5. **Retry failed batches**: One automatic retry with a "please return valid JSON" reinforcement
 
 ---
 
@@ -162,115 +305,81 @@ Low (<50%):    Unknown extension, no pattern match, conflicting signals
 StandaloneFileTinderDialog (Basic Mode)
     └── AdvancedFileTinderDialog (Advanced Mode)
             └── AiFileTinderDialog (AI Mode)    ← new
-
-FileClassifier           ← new: rule engine that categorizes files
-ClassificationResult     ← new: struct holding category + confidence + suggestion
 ```
 
-AI Mode inherits from `AdvancedFileTinderDialog` because it reuses:
-- File scanning (`scan_files()`)
-- Session persistence (`save_session_state()` / `load_session_state()`)
-- The review & execute pipeline (`show_review_summary()`, `execute_decisions()`)
-- Filter/sort infrastructure
-- Database manager integration
+AI Mode inherits from `AdvancedFileTinderDialog` because it **is** Advanced Mode with AI on top. It reuses:
+- Mind map grid and quick access bar (the stars of AI mode)
+- File scanning, session persistence, review & execute pipeline
+- Filter/sort infrastructure, database integration
+- All keyboard shortcuts, folder operations, grid configs
 
-But it **overrides `setup_ui()`** completely — the UI is a scrollable list of category groups, not a swipe card or mind map.
+It adds:
+- The AI setup dialog (`AiSetupDialog`)
+- AI analysis engine (API calls, batching, parsing)
+- Semi mode folder highlighting in mind map + quick access
+- Auto mode flow (analyze → review screen)
+- "Re-run AI" button for remaining unsorted files
+- "View AI reasoning" tooltips
 
 ### New Files
 
 ```
-app/include/AiFileTinderDialog.hpp    — AI mode dialog
+app/include/AiFileTinderDialog.hpp    — AI mode dialog + setup dialog
 app/lib/AiFileTinderDialog.cpp        — AI mode implementation
-app/include/FileClassifier.hpp        — Classification engine
-app/lib/FileClassifier.cpp            — Rule engine + learned patterns
 ```
 
-### New Database Tables
+### New Database Table
 
 ```sql
--- Learned classification patterns (Tier 3)
-CREATE TABLE ai_classification_patterns (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    extension TEXT,                    -- e.g. ".pdf"
-    name_pattern TEXT,                 -- e.g. "receipt*"
-    size_bucket TEXT,                  -- e.g. "1KB-1MB"
-    source_folder_pattern TEXT,        -- e.g. "*/Downloads"
-    suggested_decision TEXT NOT NULL,  -- "keep", "delete", "move"
-    suggested_destination TEXT,        -- e.g. "Documents/Receipts"
-    frequency INTEGER DEFAULT 1,      -- how many times this pattern was confirmed
-    last_used DATETIME
-);
-
--- AI session categories (for resuming AI sessions)
-CREATE TABLE ai_categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_folder TEXT NOT NULL,
-    category_name TEXT NOT NULL,
-    suggested_destination TEXT,
-    confidence REAL,
-    accepted INTEGER DEFAULT 0       -- 1 = user accepted this category
+-- AI provider settings (keys stored across sessions)
+CREATE TABLE ai_providers (
+    provider_name TEXT PRIMARY KEY,
+    api_key TEXT,
+    endpoint_url TEXT,
+    model_name TEXT,
+    is_local INTEGER DEFAULT 0,
+    rate_limit_rpm INTEGER DEFAULT 60,
+    last_used DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
 ### Integration with Launcher
 
 ```cpp
-// In main.cpp FileTinderLauncher — add a third mode button:
+// main.cpp — add third mode button alongside Basic and Advanced:
 
-auto* ai_btn = new QPushButton("🤖 AI Mode");
-ai_btn->setToolTip("Let AI suggest how to sort your files, then review and confirm");
+auto* ai_btn = new QPushButton("🤖 AI Mode\n(AI-assisted sorting)");
 connect(ai_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_ai);
 
-void launch_ai() {
-    // Same pattern as launch_basic / launch_advanced
-    auto* dlg = new AiFileTinderDialog(chosen_path_, db_manager_, this);
-    connect(dlg, &AiFileTinderDialog::switch_to_basic_mode, ...);
-    connect(dlg, &AiFileTinderDialog::switch_to_advanced_mode, ...);
-    dlg->initialize();
-    dlg->exec();
-    dlg->deleteLater();
-}
+// launch_ai() follows the same pattern as launch_basic / launch_advanced
+// with switch_to_basic_mode and switch_to_advanced_mode signals connected
 ```
 
 ### Mode Switching
 
-AI Mode can switch to Basic or Advanced for "Unsure" files:
+Full three-way switching:
 
 ```
-AI Mode  →  "Open unsure files in Basic Mode"  →  Basic Mode (filtered to unsure files only)
-AI Mode  →  "Open unsure files in Advanced Mode" → Advanced Mode (with AI-suggested folders pre-loaded)
+Basic ↔ Advanced ↔ AI
+
+AI → Basic:    preserves all decisions, opens basic swipe view
+AI → Advanced: preserves all decisions, drops back to manual Advanced mode
+Basic → AI:    opens AI setup dialog, then analyzes remaining unsorted files
+Advanced → AI: opens AI setup dialog, uses current folder tree as categories
 ```
-
----
-
-## What Makes This Different from Advanced Mode
-
-Advanced Mode says: *"Here are your folders. Here's a file. You decide."*
-
-AI Mode says: *"I've already sorted everything. Did I get it right?"*
-
-The mental model flips from **decision-making** to **decision-reviewing**. This is fundamentally faster because:
-
-1. **Saying "yes" is faster than choosing** — confirming a suggestion takes ~0.5s, picking from a folder tree takes ~2s
-2. **Bulk operations** — accepting a whole category at once is not possible in Basic/Advanced
-3. **Smart ordering** — high-confidence categories appear first, so you blast through easy files quickly and spend time only on genuinely ambiguous ones
-4. **Learning** — the more you use it, the better it gets. After 3-4 sessions on your Downloads folder, it knows your patterns
-
-### The "Similar But Different" Aspect
-
-- **Similar**: Same file set, same scan, same database, same execute pipeline, same undo, same session persistence
-- **Different**: No swiping, no one-at-a-time, no folder tree clicking. The interaction model is *review a pre-computed plan* rather than *build a plan from scratch*
-
-It's the difference between a chef preparing a meal from scratch (Basic/Advanced) versus a meal kit where ingredients are pre-sorted and you just confirm the recipe (AI Mode).
 
 ---
 
 ## Summary
 
-AI Mode is the third leg of the stool:
+AI Mode is Advanced Mode supercharged with an AI engine:
 
-- **Basic**: I want to quickly clean up a small folder → *swipe, swipe, swipe*
-- **Advanced**: I have a complex folder structure to sort into → *click, click, click*
-- **AI**: I have hundreds of files and want it done fast → *accept, accept, accept, fix a few, done*
+- **Auto mode**: "AI, sort everything. I'll review." → Loading → Review screen → Execute
+- **Semi mode**: "AI, show me the best 3 folders for each file." → Advanced view with highlights → User picks → Execute
 
-It reuses the entire existing infrastructure (scanning, persistence, execution, undo) but replaces the *input* model — from "tell me what to do with each file" to "here's what I'd do, correct me where I'm wrong."
+The mind map and quick access bar remain central. The AI doesn't replace the UI — it illuminates it, lighting up the right folders so the user can move faster with confidence.
+
+Three modes, one tool:
+- **Basic**: Quick cleanup → *swipe, swipe, swipe*
+- **Advanced**: Complex organization → *click, click, click*
+- **AI**: Precision sorting at scale → *AI highlights, you confirm*
