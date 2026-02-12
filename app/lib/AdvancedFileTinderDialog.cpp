@@ -1015,7 +1015,6 @@ void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
             break;
         case Qt::Key_Up:
             break;  // No back — use Z for Undo
-            break;
         case Qt::Key_N:
             prompt_add_folder();
             break;
