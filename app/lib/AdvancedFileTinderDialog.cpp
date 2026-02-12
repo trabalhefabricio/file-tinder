@@ -23,6 +23,7 @@
 #include <QScreen>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QImageReader>
 #include <algorithm>
 
 AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
@@ -800,15 +801,23 @@ void AdvancedFileTinderDialog::update_file_info_display() {
         .arg(info.lastModified().toString("yyyy-MM-dd hh:mm"));
     if (file_details_label_) file_details_label_->setText(details);
     
-    // Small inline image preview
+    // Small inline image preview (use QImageReader for efficient loading)
     if (adv_preview_label_) {
         if (file.mime_type.startsWith("image/") && !info.isDir()) {
-            QPixmap pixmap(path);
-            if (!pixmap.isNull()) {
-                int sz = ui::scaling::scaled(80);
-                pixmap = pixmap.scaled(sz, sz, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                adv_preview_label_->setPixmap(pixmap);
-                adv_preview_label_->setVisible(true);
+            int sz = ui::scaling::scaled(80);
+            QImageReader reader(path);
+            if (reader.canRead()) {
+                QSize orig = reader.size();
+                if (orig.isValid()) {
+                    reader.setScaledSize(orig.scaled(sz, sz, Qt::KeepAspectRatio));
+                }
+                QImage img = reader.read();
+                if (!img.isNull()) {
+                    adv_preview_label_->setPixmap(QPixmap::fromImage(img));
+                    adv_preview_label_->setVisible(true);
+                } else {
+                    adv_preview_label_->setVisible(false);
+                }
             } else {
                 adv_preview_label_->setVisible(false);
             }

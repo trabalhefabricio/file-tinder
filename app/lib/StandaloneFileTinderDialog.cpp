@@ -1129,7 +1129,10 @@ void StandaloneFileTinderDialog::show_review_summary() {
         
         // Decision (editable via combo box)
         auto* combo = new QComboBox();
-        combo->addItems({"keep", "delete", "skip", "pending", "move"});
+        combo->addItems({"keep", "delete", "skip", "pending"});
+        if (file.decision == "move") {
+            combo->addItem("move");
+        }
         combo->setCurrentText(file.decision);
         table->setCellWidget(visible_row, 1, combo);
         
