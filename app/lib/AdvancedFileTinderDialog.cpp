@@ -428,27 +428,35 @@ void AdvancedFileTinderDialog::prompt_add_folder() {
         }
     });
     
-    menu.addAction("Add Existing Folder...", [this]() {
-        QString folder = QFileDialog::getExistingDirectory(this, "Select Folder", source_folder_);
-        if (!folder.isEmpty()) {
-            // Requirement 5: Duplicate folder prompt
-            if (folder_model_ && folder_model_->find_node(folder)) {
-                QMessageBox::information(this, "Already Added",
-                    QString("This folder is already in the tree:\n%1").arg(folder));
-                return;
+    menu.addAction("Add Existing Folder(s)...", [this]() {
+        // Use native dialog that supports multi-select via QFileDialog
+        QFileDialog dlg(this, "Select Folder(s)", source_folder_);
+        dlg.setFileMode(QFileDialog::Directory);
+        dlg.setOption(QFileDialog::ShowDirsOnly, true);
+        
+        if (dlg.exec() == QDialog::Accepted) {
+            QStringList folders = dlg.selectedFiles();
+            int added = 0;
+            for (const QString& folder : folders) {
+                if (folder.isEmpty()) continue;
+                
+                // Requirement 5: Duplicate folder prompt
+                if (folder_model_ && folder_model_->find_node(folder)) {
+                    continue;  // Skip duplicates silently during multi-add
+                }
+                // Requirement 4: Warn about external folders
+                bool is_external = !folder.startsWith(source_folder_);
+                if (is_external && added == 0) {
+                    auto reply = QMessageBox::question(this, "External Folder",
+                        QString("One or more folders are outside the source directory.\n\n"
+                                "Files moved there will leave the original folder's location. Continue?"),
+                        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                    if (reply != QMessageBox::Yes) return;
+                }
+                if (folder_model_) folder_model_->add_folder(folder, false);
+                added++;
             }
-            // Requirement 4: Warn about external folders
-            bool is_external = !folder.startsWith(source_folder_);
-            if (is_external) {
-                auto reply = QMessageBox::question(this, "External Folder",
-                    QString("This folder is outside the source directory:\n%1\n\n"
-                            "Files moved here will leave the original folder's location. Continue?")
-                        .arg(folder),
-                    QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-                if (reply != QMessageBox::Yes) return;
-            }
-            if (folder_model_) folder_model_->add_folder(folder, false);  // Existing folder
-            if (mind_map_view_) mind_map_view_->refresh_layout();
+            if (added > 0 && mind_map_view_) mind_map_view_->refresh_layout();
         }
     });
     
@@ -689,14 +697,18 @@ void AdvancedFileTinderDialog::show_current_file() {
     update_file_info_display();
     update_stats();
     
-    // Update progress bar
+    // Update progress bar with filtered items
     if (progress_bar_) {
-        int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
-        int total = static_cast<int>(files_.size());
-        progress_bar_->setMaximum(total);
-        progress_bar_->setValue(reviewed);
-        // Requirement 17: Show assignment count in progress
-        progress_bar_->setFormat(QString("%1 / %2 assigned").arg(reviewed).arg(total));
+        int filtered_total = static_cast<int>(filtered_indices_.size());
+        int filtered_reviewed = 0;
+        for (int idx : filtered_indices_) {
+            if (files_[idx].decision != "pending") {
+                filtered_reviewed++;
+            }
+        }
+        progress_bar_->setMaximum(filtered_total);
+        progress_bar_->setValue(filtered_reviewed);
+        progress_bar_->setFormat(QString("%1 / %2 assigned").arg(filtered_reviewed).arg(filtered_total));
     }
     
     // Requirement 16: Highlight the assigned folder when showing a file
@@ -834,6 +846,33 @@ void AdvancedFileTinderDialog::on_filter_changed() {
     if (!filter_widget_) return;
     
     FileFilterType filter_type = filter_widget_->get_filter_type();
+    
+    // Prompt user about resetting progress when filter changes
+    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    if (reviewed > 0) {
+        auto reply = QMessageBox::question(this, "Filter Changed",
+            QString("You have %1 decisions made. Do you want to reset progress?\n\n"
+                    "• Yes — clear all decisions\n"
+                    "• No — keep existing decisions").arg(reviewed),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            for (auto& file : files_) {
+                if (file.decision == "move" && !file.destination_folder.isEmpty() && folder_model_) {
+                    folder_model_->unassign_file_from_folder(file.destination_folder);
+                }
+                file.decision = "pending";
+                file.destination_folder.clear();
+            }
+            keep_count_ = 0;
+            delete_count_ = 0;
+            skip_count_ = 0;
+            move_count_ = 0;
+            undo_stack_.clear();
+            if (undo_btn_) undo_btn_->setEnabled(false);
+            db_.clear_session(source_folder_);
+        }
+    }
+    
     current_filter_ = filter_type;
     
     if (filter_type == FileFilterType::Custom) {
