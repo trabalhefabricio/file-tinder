@@ -28,6 +28,7 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QPointer>
+#include <QMenu>
 #include <QSet>
 #include <QDesktopServices>
 #include <QUrl>
@@ -156,7 +157,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     top_layout->addStretch();
     
     // Mode switch in upper right corner
-    switch_mode_btn_ = new QPushButton("Advanced Mode");
+    switch_mode_btn_ = new QPushButton("Switch Mode");
     switch_mode_btn_->setFixedSize(ui::scaling::scaled(130), ui::scaling::scaled(32));
     switch_mode_btn_->setStyleSheet(
         "QPushButton { font-size: 11px; padding: 5px 10px; "
@@ -1314,14 +1315,8 @@ void StandaloneFileTinderDialog::show_review_summary() {
         });
         table->setCellWidget(visible_row, 2, dest_combo);
         
-        // Mode column: moves with destinations show the mode that made the decision
-        QString file_mode;
-        if (file.decision == "move" && !file.destination_folder.isEmpty()) {
-            file_mode = mode_name;  // Current mode made the move
-        } else {
-            file_mode = mode_name;
-        }
-        auto* mode_item = new QTableWidgetItem(file_mode);
+        // Mode column: current dialog's mode name for all decisions
+        auto* mode_item = new QTableWidgetItem(mode_name);
         mode_item->setFlags(mode_item->flags() & ~Qt::ItemIsEditable);
         table->setItem(visible_row, 3, mode_item);
         
@@ -1786,8 +1781,18 @@ bool StandaloneFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
 }
 
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {
-    save_session_state();
-    emit switch_to_advanced_mode();
+    QMenu menu(this);
+    auto* adv_action = menu.addAction("Advanced Mode");
+    auto* ai_action = menu.addAction("\xF0\x9F\xA4\x96 AI Mode");
+    QAction* selected = menu.exec(switch_mode_btn_->mapToGlobal(
+        QPoint(0, switch_mode_btn_->height())));
+    if (selected == adv_action) {
+        save_session_state();
+        emit switch_to_advanced_mode();
+    } else if (selected == ai_action) {
+        save_session_state();
+        emit switch_to_ai_mode();
+    }
 }
 
 // Sorting implementation

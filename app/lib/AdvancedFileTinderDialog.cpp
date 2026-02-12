@@ -87,16 +87,27 @@ void AdvancedFileTinderDialog::setup_ui() {
     
     title_layout->addStretch();
     
-    switch_mode_btn_ = new QPushButton("Basic Mode");
+    switch_mode_btn_ = new QPushButton("Switch Mode");
     switch_mode_btn_->setStyleSheet(
         "QPushButton { padding: 5px 15px; background-color: #3498db; "
         "border-radius: 4px; color: white; }"
         "QPushButton:hover { background-color: #2980b9; }"
     );
     connect(switch_mode_btn_, &QPushButton::clicked, this, [this]() {
-        save_folder_tree();
-        save_quick_access();
-        emit switch_to_basic_mode();
+        QMenu menu(this);
+        auto* basic_action = menu.addAction("Basic Mode");
+        auto* ai_action = menu.addAction("\xF0\x9F\xA4\x96 AI Mode");
+        QAction* selected = menu.exec(switch_mode_btn_->mapToGlobal(
+            QPoint(0, switch_mode_btn_->height())));
+        if (selected == basic_action) {
+            save_folder_tree();
+            save_quick_access();
+            emit switch_to_basic_mode();
+        } else if (selected == ai_action) {
+            save_folder_tree();
+            save_quick_access();
+            emit switch_to_ai_mode();
+        }
     });
     title_layout->addWidget(switch_mode_btn_);
     

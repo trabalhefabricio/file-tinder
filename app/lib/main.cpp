@@ -248,7 +248,7 @@ private:
         root_layout->addLayout(tools_row);
         
         // Hotkey hint
-        auto* hint_text = new QLabel("Keys: Left=Delete | Down=Skip | Up=Back | Z=Undo | Basic: Right=Keep | Advanced: K=Keep, 1-0=Quick Access");
+        auto* hint_text = new QLabel("Keys: Left=Delete | Down=Skip | Up=Back | Z=Undo | Basic: Right=Keep | Advanced/AI: K=Keep, 1-0=Quick Access");
         hint_text->setStyleSheet("color: #666666; font-size: 10px; padding-top: 8px;");
         hint_text->setAlignment(Qt::AlignCenter);
         hint_text->setWordWrap(true);
@@ -413,6 +413,12 @@ private:
             QTimer::singleShot(0, this, &FileTinderLauncher::launch_advanced);
         });
         
+        connect(dlg, &StandaloneFileTinderDialog::switch_to_ai_mode, this, [this, dlg]() {
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_ai);
+        });
+        
         dlg->initialize();
         dlg->exec();
         dlg->deleteLater();
@@ -436,6 +442,12 @@ private:
             skip_stats_on_next_launch_ = true;
             // Defer mode switch to break recursive exec() chain
             QTimer::singleShot(0, this, &FileTinderLauncher::launch_basic);
+        });
+        
+        connect(dlg, &StandaloneFileTinderDialog::switch_to_ai_mode, this, [this, dlg]() {
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_ai);
         });
         
         dlg->initialize();

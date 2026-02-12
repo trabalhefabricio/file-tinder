@@ -327,8 +327,8 @@ void AiSetupDialog::update_cost_estimate() {
         cost_label_->setText("");
         return;
     }
-    // Rough cost estimate: ~200 tokens per file description, ~100 tokens per response
-    // gpt-4o-mini: ~$0.15/1M input, ~$0.60/1M output tokens
+    // Rough cost estimate based on GPT-4o-mini pricing (~$0.15/1M input, ~$0.60/1M output)
+    // Actual costs vary by provider and model; this is an approximate indicator
     int batches = (file_count_ + kBatchSize - 1) / kBatchSize;
     double input_tokens = file_count_ * 200.0 + batches * 500.0;
     double output_tokens = file_count_ * 80.0;
@@ -610,7 +610,6 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
             int wait_secs = 60 - (elapsed.elapsed() / 1000) % 60;
             if (wait_secs <= 0) wait_secs = 5;
             log(QString("\xe2\x9a\xa0\xef\xb8\x8f Rate limit: waiting %1s before next request...").arg(wait_secs));
-            QTimer::singleShot(wait_secs * 1000, []{});
             QEventLoop wait_loop;
             QTimer::singleShot(wait_secs * 1000, &wait_loop, &QEventLoop::quit);
             wait_loop.exec();
@@ -634,7 +633,6 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
             progress_dialog.hide();
             auto reply = QMessageBox::question(this, "AI Analysis Interrupted",
                 QString("AI analysis interrupted after %1/%2 files.\n\n"
-                        "%1 files have been classified.\n"
                         "%3 files remain unclassified.\n\n"
                         "What would you like to do?")
                     .arg(files_classified).arg(total_files).arg(total_files - files_classified),
@@ -1035,6 +1033,7 @@ void AiFileTinderDialog::apply_auto_suggestions() {
 
         auto& file = files_[s.file_index];
         if (file.decision != "pending") continue;
+        if (s.suggested_folders.isEmpty()) continue;
 
         QString dest = s.suggested_folders.first();
 

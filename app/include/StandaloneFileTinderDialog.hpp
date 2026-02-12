@@ -223,6 +223,7 @@ protected:
 signals:
     void session_completed();
     void switch_to_advanced_mode();
+    void switch_to_ai_mode();
     
 protected slots:
     void on_switch_mode_clicked();
