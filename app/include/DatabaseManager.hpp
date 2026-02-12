@@ -58,6 +58,7 @@ public:
     
     // Recent folders
     bool add_recent_folder(const QString& folder_path);
+    bool remove_recent_folder(const QString& folder_path);
     QStringList get_recent_folders(int limit = 10);
     
     // Quick access folders (manual, limited to 10)

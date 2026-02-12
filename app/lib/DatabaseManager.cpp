@@ -313,6 +313,13 @@ bool DatabaseManager::add_recent_folder(const QString& folder_path) {
     return query.exec();
 }
 
+bool DatabaseManager::remove_recent_folder(const QString& folder_path) {
+    QSqlQuery query(db_);
+    query.prepare("DELETE FROM recent_folders WHERE folder_path = ?");
+    query.addBindValue(folder_path);
+    return query.exec();
+}
+
 QStringList DatabaseManager::get_recent_folders(int limit) {
     QStringList folders;
     

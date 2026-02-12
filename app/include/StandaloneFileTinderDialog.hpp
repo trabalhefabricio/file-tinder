@@ -203,6 +203,9 @@ protected:
     // Help
     void show_shortcuts_help();
     
+    // Reset progress
+    void on_reset_progress();
+    
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;
     void closeEvent(QCloseEvent* event) override;

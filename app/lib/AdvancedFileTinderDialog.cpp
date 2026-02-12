@@ -336,6 +336,17 @@ void AdvancedFileTinderDialog::setup_action_buttons() {
     connect(cancel_btn, &QPushButton::clicked, this, &QDialog::reject);
     bottom_layout->addWidget(cancel_btn);
     
+    // Reset Progress button
+    auto* reset_btn = new QPushButton("Reset");
+    reset_btn->setStyleSheet(
+        "QPushButton { padding: 8px 16px; background-color: #e74c3c; "
+        "color: white; border-radius: 4px; }"
+        "QPushButton:hover { background-color: #c0392b; }"
+    );
+    reset_btn->setToolTip("Reset all decisions and start over");
+    connect(reset_btn, &QPushButton::clicked, this, [this]() { on_reset_progress(); });
+    bottom_layout->addWidget(reset_btn);
+    
     bottom_layout->addStretch();
     
     // Stats

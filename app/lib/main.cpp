@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QComboBox>
+#include <QListWidget>
 #include <QMessageBox>
 #include <QStyleFactory>
 #include <QDir>
@@ -16,6 +17,7 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QFileInfo>
+#include <QMouseEvent>
 
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
@@ -68,6 +70,24 @@ private:
     DatabaseManager db_manager_;
     QString chosen_path_;
     QLabel* path_indicator_;
+    QListWidget* recent_list_ = nullptr;
+    
+    bool eventFilter(QObject* obj, QEvent* event) override {
+        if (recent_list_ && obj == recent_list_->viewport() && event->type() == QEvent::MouseButtonPress) {
+            auto* me = static_cast<QMouseEvent*>(event);
+            if (me->button() == Qt::MiddleButton) {
+                auto* item = recent_list_->itemAt(me->pos());
+                if (item) {
+                    QString path = item->text();
+                    delete recent_list_->takeItem(recent_list_->row(item));
+                    db_manager_.remove_recent_folder(path);
+                    LOG_INFO("Launcher", QString("Removed recent folder: %1").arg(path));
+                    return true;
+                }
+            }
+        }
+        return QDialog::eventFilter(obj, event);
+    }
     
     void build_interface() {
         auto* root_layout = new QVBoxLayout(this);
@@ -111,35 +131,45 @@ private:
         
         root_layout->addLayout(picker_row);
         
-        // Recent folders combo
+        // Recent folders list (middle-click to remove)
         QStringList recent = db_manager_.get_recent_folders(5);
         if (!recent.isEmpty()) {
-            auto* recent_combo = new QComboBox();
-            recent_combo->addItem("Recent folders...");
-            for (const QString& folder : recent) {
-                recent_combo->addItem(folder);
-            }
-            recent_combo->setStyleSheet(
-                "QComboBox { padding: 4px 8px; background-color: #2d2d2d; border: 1px solid #404040; color: #aaaaaa; }"
+            auto* recent_label = new QLabel("Recent folders (click to select, middle-click to remove):");
+            recent_label->setStyleSheet("color: #888888; font-size: 10px;");
+            root_layout->addWidget(recent_label);
+            
+            auto* recent_list = new QListWidget();
+            recent_list->setMaximumHeight(ui::scaling::scaled(80));
+            recent_list->setStyleSheet(
+                "QListWidget { background-color: #2d2d2d; border: 1px solid #404040; color: #aaaaaa; }"
+                "QListWidget::item { padding: 3px 8px; }"
+                "QListWidget::item:hover { background-color: #3a3a3a; }"
+                "QListWidget::item:selected { background-color: #0078d4; color: white; }"
             );
-            connect(recent_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, 
-                    [this, recent_combo](int index) {
-                if (index > 0) {
-                    QString path = recent_combo->itemText(index);
-                    if (QDir(path).exists()) {
-                        chosen_path_ = path;
-                        path_indicator_->setText(path);
-                        path_indicator_->setStyleSheet(
-                            "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
-                        );
-                    } else {
-                        QMessageBox::warning(this, "Folder Not Found", 
-                            QString("The folder no longer exists:\n%1").arg(path));
-                    }
-                    recent_combo->setCurrentIndex(0);
+            for (const QString& folder : recent) {
+                recent_list->addItem(folder);
+            }
+            
+            connect(recent_list, &QListWidget::itemClicked, this,
+                    [this, recent_list](QListWidgetItem* item) {
+                QString path = item->text();
+                if (QDir(path).exists()) {
+                    chosen_path_ = path;
+                    path_indicator_->setText(path);
+                    path_indicator_->setStyleSheet(
+                        "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
+                    );
+                } else {
+                    QMessageBox::warning(this, "Folder Not Found",
+                        QString("The folder no longer exists:\n%1").arg(path));
                 }
+                recent_list->clearSelection();
             });
-            root_layout->addWidget(recent_combo);
+            
+            // Middle-click to remove
+            recent_list->viewport()->installEventFilter(this);
+            recent_list_ = recent_list;
+            root_layout->addWidget(recent_list);
         }
         
         root_layout->addStretch();

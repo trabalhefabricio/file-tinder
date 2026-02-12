@@ -389,16 +389,31 @@ void StandaloneFileTinderDialog::setup_ui() {
     connect(undo_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_undo);
     bottom_layout->addWidget(undo_btn_);
     
-    // Preview button (for opening images in separate window)
+    // Preview toggle (toggles inline preview in basic mode)
     preview_btn_ = new QPushButton("Preview [P]");
     preview_btn_->setFixedHeight(ui::scaling::scaled(36));
+    preview_btn_->setCheckable(true);
+    preview_btn_->setChecked(true);
     preview_btn_->setStyleSheet(QString(
         "QPushButton { font-size: 12px; padding: 8px 15px; "
         "background-color: %1; border-radius: 4px; color: white; }"
         "QPushButton:hover { background-color: #2980b9; }"
+        "QPushButton:checked { background-color: #2980b9; border: 2px solid #1abc9c; }"
     ).arg(ui::colors::kMoveColor));
     connect(preview_btn_, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_show_preview);
     bottom_layout->addWidget(preview_btn_);
+    
+    // Reset Progress button
+    auto* reset_btn = new QPushButton("Reset");
+    reset_btn->setFixedHeight(ui::scaling::scaled(36));
+    reset_btn->setStyleSheet(
+        "QPushButton { font-size: 12px; padding: 8px 15px; "
+        "background-color: #e74c3c; border-radius: 4px; color: white; }"
+        "QPushButton:hover { background-color: #c0392b; }"
+    );
+    reset_btn->setToolTip("Reset all decisions and start over");
+    connect(reset_btn, &QPushButton::clicked, this, &StandaloneFileTinderDialog::on_reset_progress);
+    bottom_layout->addWidget(reset_btn);
     
     bottom_layout->addStretch();
     
@@ -637,19 +652,29 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
 }
 
 void StandaloneFileTinderDialog::update_progress() {
-    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
-    int total = static_cast<int>(files_.size());
     int filtered_total = static_cast<int>(filtered_indices_.size());
     
-    if (progress_bar_) progress_bar_->setValue(reviewed);
+    // Count reviewed files within filtered set
+    int filtered_reviewed = 0;
+    for (int idx : filtered_indices_) {
+        if (files_[idx].decision != "pending") {
+            filtered_reviewed++;
+        }
+    }
     
-    int percent = total > 0 ? (reviewed * 100 / total) : 0;
+    if (progress_bar_) {
+        progress_bar_->setMaximum(filtered_total);
+        progress_bar_->setValue(filtered_reviewed);
+    }
+    
+    int percent = filtered_total > 0 ? (filtered_reviewed * 100 / filtered_total) : 0;
+    int total = static_cast<int>(files_.size());
     QString filter_info = (current_filter_ != FileFilterType::All) 
-        ? QString(" (showing %1 of %2)").arg(filtered_total).arg(total)
+        ? QString(" (filtered: %1 of %2)").arg(filtered_total).arg(total)
         : "";
     if (progress_label_) {
         progress_label_->setText(QString("Progress: %1 / %2 files (%3%)%4")
-                                 .arg(reviewed).arg(total).arg(percent).arg(filter_info));
+                                 .arg(filtered_reviewed).arg(filtered_total).arg(percent).arg(filter_info));
     }
 }
 
@@ -859,56 +884,57 @@ void StandaloneFileTinderDialog::on_undo() {
 
 void StandaloneFileTinderDialog::on_show_preview() {
     try {
-        int file_idx = get_current_file_index();
-        if (file_idx < 0) return;
-        
-        const auto& file = files_[file_idx];
-        
-        // Check if it's an image
-        if (!file.mime_type.startsWith("image/")) {
-            QMessageBox::information(this, "Preview", 
-                "Preview is only available for image files.\n"
-                "Current file type: " + file.mime_type);
-            return;
+        // Toggle inline preview visibility in basic mode
+        if (preview_label_) {
+            bool showing = preview_label_->isVisible();
+            preview_label_->setVisible(!showing);
+            if (file_icon_label_) file_icon_label_->setVisible(!showing);
+            if (preview_btn_) preview_btn_->setChecked(!showing);
         }
-        
-        // Create or show the image preview window
-        if (!image_preview_window_) {
-            image_preview_window_ = new ImagePreviewWindow(this);
-            
-            // Connect navigation signals
-            connect(image_preview_window_, &ImagePreviewWindow::next_requested, this, [this]() {
-                on_skip();  // Move to next file
-                if (image_preview_window_ && image_preview_window_->isVisible()) {
-                    int idx = get_current_file_index();
-                    if (idx >= 0 && files_[idx].mime_type.startsWith("image/")) {
-                        image_preview_window_->set_image(files_[idx].path);
-                    }
-                }
-            });
-            
-            connect(image_preview_window_, &ImagePreviewWindow::previous_requested, this, [this]() {
-                on_back();  // Move to previous file
-                if (image_preview_window_ && image_preview_window_->isVisible()) {
-                    int idx = get_current_file_index();
-                    if (idx >= 0 && files_[idx].mime_type.startsWith("image/")) {
-                        image_preview_window_->set_image(files_[idx].path);
-                    }
-                }
-            });
-        }
-        
-        image_preview_window_->set_image(file.path);
-        image_preview_window_->show();
-        image_preview_window_->raise();
-        image_preview_window_->activateWindow();
-        
-        LOG_DEBUG("BasicMode", QString("Opened preview for: %1").arg(file.name));
-        
     } catch (const std::exception& ex) {
         LOG_ERROR("BasicMode", QString("Error in on_show_preview: %1").arg(ex.what()));
-        QMessageBox::warning(this, "Error", QString("An error occurred: %1").arg(ex.what()));
     }
+}
+
+void StandaloneFileTinderDialog::on_reset_progress() {
+    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    if (reviewed == 0) {
+        QMessageBox::information(this, "Nothing to Reset", "No decisions have been made yet.");
+        return;
+    }
+    
+    auto reply = QMessageBox::question(this, "Reset Progress",
+        QString("This will clear all %1 decisions and start over.\n\n"
+                "This cannot be undone. Continue?").arg(reviewed),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    
+    if (reply != QMessageBox::Yes) return;
+    
+    // Reset all decisions
+    for (auto& file : files_) {
+        file.decision = "pending";
+        file.destination_folder.clear();
+    }
+    keep_count_ = 0;
+    delete_count_ = 0;
+    skip_count_ = 0;
+    move_count_ = 0;
+    undo_stack_.clear();
+    if (undo_btn_) undo_btn_->setEnabled(false);
+    
+    // Clear from database
+    db_.clear_session(source_folder_);
+    
+    // Reset to first file
+    current_filtered_index_ = 0;
+    
+    update_stats();
+    update_progress();
+    if (!filtered_indices_.empty()) {
+        show_current_file();
+    }
+    
+    LOG_INFO("BasicMode", "Progress reset by user");
 }
 
 void StandaloneFileTinderDialog::on_finish() {
@@ -1662,6 +1688,31 @@ void StandaloneFileTinderDialog::on_filter_changed(int index) {
 
 void StandaloneFileTinderDialog::apply_filter(FileFilterType filter) {
     current_filter_ = filter;
+    
+    // Prompt user about resetting progress when filter changes
+    int reviewed = keep_count_ + delete_count_ + skip_count_ + move_count_;
+    if (reviewed > 0) {
+        auto reply = QMessageBox::question(this, "Filter Changed",
+            QString("You have %1 decisions made. Do you want to reset progress and start fresh with this filter?\n\n"
+                    "• Yes — clear all decisions\n"
+                    "• No — keep existing decisions").arg(reviewed),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            // Reset all decisions to pending
+            for (auto& file : files_) {
+                file.decision = "pending";
+                file.destination_folder.clear();
+            }
+            keep_count_ = 0;
+            delete_count_ = 0;
+            skip_count_ = 0;
+            move_count_ = 0;
+            undo_stack_.clear();
+            if (undo_btn_) undo_btn_->setEnabled(false);
+            db_.clear_session(source_folder_);
+        }
+    }
+    
     rebuild_filtered_indices();
     
     // Find first pending file in new filter
@@ -1763,13 +1814,16 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
         preview_label_->setGraphicsEffect(effect);
     }
     
-    // Stop any existing animation - deletion is handled by DeleteWhenStopped from previous start()
-    if (swipe_animation_) {
+    // If animation is running, just reset opacity and skip — prevents crash on rapid clicks
+    if (swipe_animation_ && swipe_animation_->state() == QAbstractAnimation::Running) {
         swipe_animation_->stop();
-        swipe_animation_ = nullptr;
+        effect->setOpacity(1.0);
     }
     
-    // Create new animation with 'this' as parent for backup cleanup on dialog destruction
+    // Clean up previous animation (stop() + DeleteWhenStopped already deleted it, so null the ptr)
+    swipe_animation_ = nullptr;
+    
+    // Create new animation owned by 'this' for safe lifetime
     swipe_animation_ = new QPropertyAnimation(effect, "opacity", this);
     swipe_animation_->setDuration(150);
     
@@ -1783,15 +1837,18 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     
     swipe_animation_->setEasingCurve(QEasingCurve::OutQuad);
     
-    // Use QPointer to safely access effect in callback - will be null if effect was deleted
+    // Use QPointer to safely access effect in callback
     QPointer<QGraphicsOpacityEffect> weak_effect = effect;
-    connect(swipe_animation_, &QPropertyAnimation::finished, this, [weak_effect]() {
+    QPointer<StandaloneFileTinderDialog> weak_this = this;
+    connect(swipe_animation_, &QPropertyAnimation::finished, this, [weak_effect, weak_this]() {
         if (weak_effect) {
             weak_effect->setOpacity(1.0);
         }
+        if (weak_this) {
+            weak_this->swipe_animation_ = nullptr;
+        }
     });
     
-    // DeleteWhenStopped handles cleanup when animation finishes or is stopped
     swipe_animation_->start(QAbstractAnimation::DeleteWhenStopped);
 }
 
