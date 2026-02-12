@@ -478,6 +478,88 @@ bool DatabaseManager::clear_execution_log(const QString& session_folder) {
     return query.exec();
 }
 
+bool DatabaseManager::save_grid_config(const QString& session_folder, const QString& config_name,
+                                       const QStringList& folder_paths) {
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS grid_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            config_name TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            sort_order INTEGER NOT NULL
+        )
+    )");
+    
+    // Delete existing config with this name
+    QSqlQuery del(db_);
+    del.prepare("DELETE FROM grid_configs WHERE session_folder = ? AND config_name = ?");
+    del.addBindValue(session_folder);
+    del.addBindValue(config_name);
+    del.exec();
+    
+    for (int i = 0; i < folder_paths.size(); ++i) {
+        QSqlQuery ins(db_);
+        ins.prepare("INSERT INTO grid_configs (session_folder, config_name, folder_path, sort_order) VALUES (?, ?, ?, ?)");
+        ins.addBindValue(session_folder);
+        ins.addBindValue(config_name);
+        ins.addBindValue(folder_paths[i]);
+        ins.addBindValue(i);
+        if (!ins.exec()) return false;
+    }
+    return true;
+}
+
+QStringList DatabaseManager::get_grid_config(const QString& session_folder, const QString& config_name) {
+    QStringList paths;
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS grid_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            config_name TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            sort_order INTEGER NOT NULL
+        )
+    )");
+    
+    QSqlQuery q(db_);
+    q.prepare("SELECT folder_path FROM grid_configs WHERE session_folder = ? AND config_name = ? ORDER BY sort_order");
+    q.addBindValue(session_folder);
+    q.addBindValue(config_name);
+    if (q.exec()) {
+        while (q.next()) paths.append(q.value(0).toString());
+    }
+    return paths;
+}
+
+QStringList DatabaseManager::get_grid_config_names(const QString& session_folder) {
+    QStringList names;
+    execute_query(R"(
+        CREATE TABLE IF NOT EXISTS grid_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_folder TEXT NOT NULL,
+            config_name TEXT NOT NULL,
+            folder_path TEXT NOT NULL,
+            sort_order INTEGER NOT NULL
+        )
+    )");
+    
+    QSqlQuery q(db_);
+    q.prepare("SELECT DISTINCT config_name FROM grid_configs WHERE session_folder = ?");
+    q.addBindValue(session_folder);
+    if (q.exec()) {
+        while (q.next()) names.append(q.value(0).toString());
+    }
+    return names;
+}
+
+bool DatabaseManager::delete_grid_config(const QString& session_folder, const QString& config_name) {
+    QSqlQuery q(db_);
+    q.prepare("DELETE FROM grid_configs WHERE session_folder = ? AND config_name = ?");
+    q.addBindValue(session_folder);
+    q.addBindValue(config_name);
+    return q.exec();
+}
+
 int DatabaseManager::cleanup_stale_sessions(int days_old) {
     int cleaned = 0;
     

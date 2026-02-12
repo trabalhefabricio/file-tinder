@@ -4,6 +4,7 @@
 #include "StandaloneFileTinderDialog.hpp"
 #include <QListWidget>
 #include <QScrollArea>
+#include <QSet>
 
 class FolderTreeModel;
 class MindMapView;
@@ -18,11 +19,10 @@ public:
                                        QWidget* parent = nullptr);
     ~AdvancedFileTinderDialog() override;
     
-    // Override initialize to set up advanced mode properly
     void initialize() override;
     
 private:
-    // Advanced mode components (vertical layout - no splitter)
+    // Advanced mode components
     QScrollArea* scroll_area_;
     QWidget* main_content_;
     MindMapView* mind_map_view_;
@@ -30,6 +30,7 @@ private:
     QLabel* adv_file_icon_label_;
     QLabel* file_name_label_;
     QLabel* file_details_label_;
+    QLabel* adv_preview_label_;     // Small inline image preview
     QWidget* quick_access_panel_;
     QListWidget* quick_access_list_;
     FilterWidget* filter_widget_;
@@ -37,7 +38,7 @@ private:
     // Folder tree model
     FolderTreeModel* folder_model_;
     
-    // Quick access management (manual, limited to 10)
+    // Quick access management
     QStringList quick_access_folders_;
     static const int kMaxQuickAccess = 10;
     
@@ -55,7 +56,7 @@ private:
     void prompt_add_folder();
     void on_folder_context_menu(const QString& folder_path, const QPoint& pos);
     
-    // Quick access (manual management)
+    // Quick access
     void load_quick_access();
     void save_quick_access();
     void add_to_quick_access(const QString& folder_path);
@@ -65,6 +66,15 @@ private:
     void on_add_quick_access();
     void on_remove_quick_access();
     
+    // Grid configuration
+    void save_grid_config();
+    void load_grid_config();
+    void reset_grid();
+    QStringList get_destination_folders() const override;
+    
+    // Folder exclusion — folders in grid/quick access are exempt from processing
+    QSet<QString> get_excluded_folder_paths() const;
+    
     // File info display
     void update_file_info_display();
     QString get_file_type_icon(const QString& path);
@@ -72,10 +82,10 @@ private:
     // Override actions
     void on_finish() override;
     void on_undo() override;
-    void show_current_file() override;  // Override base class implementation
+    void show_current_file() override;
     void closeEvent(QCloseEvent* event) override;
-    void reject() override;  // Save folder tree/quick access before closing
-    bool eventFilter(QObject* obj, QEvent* event) override;  // Double-click to open file
+    void reject() override;
+    bool eventFilter(QObject* obj, QEvent* event) override;
     
     // Keyboard shortcuts
     void keyPressEvent(QKeyEvent* event) override;

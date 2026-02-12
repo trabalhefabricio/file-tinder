@@ -16,12 +16,14 @@
 #include <QProgressDialog>
 #include <QGroupBox>
 #include <QScrollArea>
+#include <QSpinBox>
 #include <QDir>
 #include <QMimeDatabase>
 #include <QSettings>
 #include <QScreen>
 #include <QDesktopServices>
 #include <QUrl>
+#include <algorithm>
 
 AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
                                                    DatabaseManager& db,
@@ -34,6 +36,7 @@ AdvancedFileTinderDialog::AdvancedFileTinderDialog(const QString& source_folder,
     , adv_file_icon_label_(nullptr)
     , file_name_label_(nullptr)
     , file_details_label_(nullptr)
+    , adv_preview_label_(nullptr)
     , quick_access_panel_(nullptr)
     , quick_access_list_(nullptr)
     , filter_widget_(nullptr)
@@ -122,6 +125,16 @@ void AdvancedFileTinderDialog::setup_ui() {
     load_folder_tree();
     load_quick_access();
     
+    // Exclude folders in grid/quick access from processing
+    QSet<QString> excluded = get_excluded_folder_paths();
+    if (!excluded.isEmpty()) {
+        files_.erase(std::remove_if(files_.begin(), files_.end(),
+            [&excluded](const FileToProcess& f) {
+                return f.is_directory && excluded.contains(f.path);
+            }), files_.end());
+        rebuild_filtered_indices();
+    }
+    
     // Requirement 2: Detect missing folders (deleted from disk between sessions)
     check_missing_folders();
     
@@ -172,6 +185,46 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     auto* map_layout = new QVBoxLayout(map_group);
     map_layout->setContentsMargins(5, 15, 5, 5);
     
+    // Grid toolbar: rows spinner + save/load/reset
+    auto* grid_toolbar = new QHBoxLayout();
+    grid_toolbar->setSpacing(6);
+    
+    grid_toolbar->addWidget(new QLabel("Rows:"));
+    auto* rows_spin = new QSpinBox();
+    rows_spin->setRange(1, 20);
+    rows_spin->setValue(6);
+    rows_spin->setMaximumWidth(50);
+    rows_spin->setToolTip("Max items per column before wrapping");
+    connect(rows_spin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
+        if (mind_map_view_) {
+            mind_map_view_->set_max_rows_per_col(val);
+            mind_map_view_->refresh_layout();
+        }
+    });
+    grid_toolbar->addWidget(rows_spin);
+    
+    grid_toolbar->addStretch();
+    
+    auto* save_cfg_btn = new QPushButton("Save Grid");
+    save_cfg_btn->setMaximumWidth(70);
+    save_cfg_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    connect(save_cfg_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::save_grid_config);
+    grid_toolbar->addWidget(save_cfg_btn);
+    
+    auto* load_cfg_btn = new QPushButton("Load Grid");
+    load_cfg_btn->setMaximumWidth(70);
+    load_cfg_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    connect(load_cfg_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::load_grid_config);
+    grid_toolbar->addWidget(load_cfg_btn);
+    
+    auto* reset_grid_btn = new QPushButton("Reset Grid");
+    reset_grid_btn->setMaximumWidth(70);
+    reset_grid_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; color: #e74c3c; }");
+    connect(reset_grid_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::reset_grid);
+    grid_toolbar->addWidget(reset_grid_btn);
+    
+    map_layout->addLayout(grid_toolbar);
+    
     mind_map_view_ = new MindMapView();
     mind_map_view_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     
@@ -185,7 +238,7 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     map_layout->addWidget(mind_map_view_);
     
     // Hint label
-    auto* hint = new QLabel("Click folder to assign file. [+] to add destination. Right-click for options. Keys: K=Keep, D/←=Delete, S/↓=Skip, N=New folder, 1-0=Quick Access");
+    auto* hint = new QLabel("Click folder to assign file. [+] to add. Right-click for options. K=Keep, D/←=Delete, S/↓=Skip, 1-0=Quick Access");
     hint->setStyleSheet("color: #666; font-size: 10px;");
     hint->setWordWrap(true);
     map_layout->addWidget(hint);
@@ -224,6 +277,14 @@ void AdvancedFileTinderDialog::setup_file_info_panel() {
     
     info_layout->addWidget(text_widget, 1);
     
+    // Small inline image preview (80x80)
+    adv_preview_label_ = new QLabel();
+    adv_preview_label_->setFixedSize(ui::scaling::scaled(80), ui::scaling::scaled(80));
+    adv_preview_label_->setAlignment(Qt::AlignCenter);
+    adv_preview_label_->setStyleSheet("background-color: #2c3e50; border-radius: 4px;");
+    adv_preview_label_->setVisible(false);
+    info_layout->addWidget(adv_preview_label_);
+    
     // Progress
     progress_bar_ = new QProgressBar();
     progress_bar_->setMaximumWidth(150);
@@ -255,6 +316,8 @@ void AdvancedFileTinderDialog::setup_quick_access_panel() {
     );
     connect(quick_access_list_, &QListWidget::itemClicked,
             this, &AdvancedFileTinderDialog::on_quick_access_clicked);
+    // Middle-click to remove items from Quick Access
+    quick_access_list_->viewport()->installEventFilter(this);
     qa_layout->addWidget(quick_access_list_, 1);
     
     auto* add_qa_btn = new QPushButton("+");
@@ -268,6 +331,22 @@ void AdvancedFileTinderDialog::setup_quick_access_panel() {
     remove_qa_btn->setToolTip("Remove selected from Quick Access");
     connect(remove_qa_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::on_remove_quick_access);
     qa_layout->addWidget(remove_qa_btn);
+    
+    auto* clear_qa_btn = new QPushButton("Clear");
+    clear_qa_btn->setMaximumWidth(40);
+    clear_qa_btn->setToolTip("Clear all Quick Access slots");
+    clear_qa_btn->setStyleSheet("QPushButton { font-size: 10px; color: #e74c3c; }");
+    connect(clear_qa_btn, &QPushButton::clicked, this, [this]() {
+        if (quick_access_folders_.isEmpty()) return;
+        auto reply = QMessageBox::question(this, "Clear Quick Access",
+            "Remove all Quick Access shortcuts?",
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply == QMessageBox::Yes) {
+            quick_access_folders_.clear();
+            update_quick_access_display();
+        }
+    });
+    qa_layout->addWidget(clear_qa_btn);
     
     static_cast<QVBoxLayout*>(layout())->addWidget(quick_access_panel_);
 }
@@ -488,6 +567,39 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
         add_to_quick_access(folder_path);
     });
     
+    // Replace with another folder
+    if (folder_path != source_folder_) {
+        menu.addAction("Replace with...", [this, folder_path]() {
+            QString new_folder = QFileDialog::getExistingDirectory(this, "Replace with Folder", source_folder_);
+            if (new_folder.isEmpty() || new_folder == folder_path) return;
+            if (folder_model_ && folder_model_->find_node(new_folder)) {
+                QMessageBox::information(this, "Already Added",
+                    QString("'%1' is already in the tree.").arg(QFileInfo(new_folder).fileName()));
+                return;
+            }
+            // Move assigned files from old folder to new folder
+            for (auto& file : files_) {
+                if (file.decision == "move" && file.destination_folder == folder_path) {
+                    file.destination_folder = new_folder;
+                }
+            }
+            // Replace in quick access too
+            int qa_idx = quick_access_folders_.indexOf(folder_path);
+            if (qa_idx >= 0) quick_access_folders_[qa_idx] = new_folder;
+            // Remove old, add new
+            if (folder_model_) {
+                FolderNode* old_node = folder_model_->find_node(folder_path);
+                int count = old_node ? old_node->assigned_file_count : 0;
+                folder_model_->remove_folder(folder_path);
+                folder_model_->add_folder(new_folder, false);
+                FolderNode* new_node = folder_model_->find_node(new_folder);
+                if (new_node) new_node->assigned_file_count = count;
+            }
+            if (mind_map_view_) mind_map_view_->refresh_layout();
+            update_quick_access_display();
+        });
+    }
+    
     menu.addAction("Add Subfolder...", [this, folder_path]() {
         bool ok;
         QString name = QInputDialog::getText(this, "New Subfolder",
@@ -660,6 +772,7 @@ void AdvancedFileTinderDialog::update_file_info_display() {
         if (adv_file_icon_label_) adv_file_icon_label_->setText("[---]");
         if (file_name_label_) file_name_label_->setText("No file selected");
         if (file_details_label_) file_details_label_->setText("");
+        if (adv_preview_label_) adv_preview_label_->setVisible(false);
         return;
     }
     
@@ -686,6 +799,23 @@ void AdvancedFileTinderDialog::update_file_info_display() {
         .arg(info.isDir() ? "Folder" : info.suffix().toUpper())
         .arg(info.lastModified().toString("yyyy-MM-dd hh:mm"));
     if (file_details_label_) file_details_label_->setText(details);
+    
+    // Small inline image preview
+    if (adv_preview_label_) {
+        if (file.mime_type.startsWith("image/") && !info.isDir()) {
+            QPixmap pixmap(path);
+            if (!pixmap.isNull()) {
+                int sz = ui::scaling::scaled(80);
+                pixmap = pixmap.scaled(sz, sz, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                adv_preview_label_->setPixmap(pixmap);
+                adv_preview_label_->setVisible(true);
+            } else {
+                adv_preview_label_->setVisible(false);
+            }
+        } else {
+            adv_preview_label_->setVisible(false);
+        }
+    }
 }
 
 QString AdvancedFileTinderDialog::get_file_type_icon(const QString& path) {
@@ -769,6 +899,19 @@ bool AdvancedFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(files_[file_idx].path));
         }
         return true;
+    }
+    // Middle-click to remove quick access items
+    if (quick_access_list_ && obj == quick_access_list_->viewport() &&
+        event->type() == QEvent::MouseButtonPress) {
+        auto* me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::MiddleButton) {
+            auto* item = quick_access_list_->itemAt(me->pos());
+            if (item) {
+                int row = quick_access_list_->row(item);
+                remove_from_quick_access(row);
+                return true;
+            }
+        }
     }
     return StandaloneFileTinderDialog::eventFilter(obj, event);
 }
@@ -952,6 +1095,114 @@ void AdvancedFileTinderDialog::load_folder_tree() {
     if (mind_map_view_) {
         mind_map_view_->refresh_layout();
     }
+}
+
+void AdvancedFileTinderDialog::save_grid_config() {
+    if (!folder_model_ || !folder_model_->root_node()) return;
+    
+    bool ok;
+    QString name = QInputDialog::getText(this, "Save Grid Configuration",
+        "Enter a name for this grid layout:", QLineEdit::Normal, "", &ok);
+    if (!ok || name.isEmpty()) return;
+    
+    QStringList paths = folder_model_->get_all_folder_paths();
+    db_.save_grid_config(source_folder_, name, paths);
+    QMessageBox::information(this, "Saved", QString("Grid configuration '%1' saved with %2 folder(s).")
+        .arg(name).arg(paths.size()));
+}
+
+void AdvancedFileTinderDialog::load_grid_config() {
+    QStringList names = db_.get_grid_config_names(source_folder_);
+    if (names.isEmpty()) {
+        QMessageBox::information(this, "No Configs", "No saved grid configurations for this folder.");
+        return;
+    }
+    
+    bool ok;
+    QString name = QInputDialog::getItem(this, "Load Grid Configuration",
+        "Select a configuration:", names, 0, false, &ok);
+    if (!ok) return;
+    
+    QStringList paths = db_.get_grid_config(source_folder_, name);
+    if (paths.isEmpty()) return;
+    
+    // Clear current tree (except root)
+    if (folder_model_) {
+        QStringList current = folder_model_->get_all_folder_paths();
+        folder_model_->blockSignals(true);
+        for (const QString& p : current) {
+            folder_model_->remove_folder(p);
+        }
+        // Add folders from config
+        for (const QString& p : paths) {
+            bool is_virtual = !QDir(p).exists();
+            folder_model_->add_folder(p, is_virtual);
+        }
+        folder_model_->blockSignals(false);
+    }
+    if (mind_map_view_) mind_map_view_->refresh_layout();
+}
+
+void AdvancedFileTinderDialog::reset_grid() {
+    if (!folder_model_ || !folder_model_->root_node()) return;
+    
+    QStringList current = folder_model_->get_all_folder_paths();
+    if (current.isEmpty()) {
+        QMessageBox::information(this, "Already Empty", "The grid only contains the root folder.");
+        return;
+    }
+    
+    // Check for virtual folders
+    QStringList virtual_folders = folder_model_->get_virtual_folders();
+    
+    QString msg = QString("Remove all %1 folder(s) from the grid, leaving only the root?").arg(current.size());
+    if (!virtual_folders.isEmpty()) {
+        msg += QString("\n\nThis includes %1 virtual folder(s). These will be deleted.").arg(virtual_folders.size());
+    }
+    
+    auto reply = QMessageBox::question(this, "Reset Grid", msg,
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (reply != QMessageBox::Yes) return;
+    
+    // Revert files assigned to any of these folders
+    for (auto& file : files_) {
+        if (file.decision == "move" && current.contains(file.destination_folder)) {
+            file.decision = "pending";
+            file.destination_folder.clear();
+            move_count_--;
+        }
+    }
+    
+    folder_model_->blockSignals(true);
+    for (const QString& p : current) {
+        folder_model_->remove_folder(p);
+    }
+    folder_model_->blockSignals(false);
+    
+    if (mind_map_view_) mind_map_view_->refresh_layout();
+    update_stats();
+    show_current_file();
+}
+
+QSet<QString> AdvancedFileTinderDialog::get_excluded_folder_paths() const {
+    QSet<QString> excluded;
+    if (folder_model_) {
+        QStringList tree_paths = folder_model_->get_all_folder_paths();
+        for (const QString& p : tree_paths) {
+            excluded.insert(p);
+        }
+    }
+    for (const QString& p : quick_access_folders_) {
+        excluded.insert(p);
+    }
+    return excluded;
+}
+
+QStringList AdvancedFileTinderDialog::get_destination_folders() const {
+    if (folder_model_) {
+        return folder_model_->get_all_folder_paths();
+    }
+    return {};
 }
 
 void AdvancedFileTinderDialog::save_folder_tree() {

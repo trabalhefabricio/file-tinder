@@ -353,6 +353,20 @@ void FolderTreeModel::collect_virtual_folders(FolderNode* node, QStringList& res
     }
 }
 
+QStringList FolderTreeModel::get_all_folder_paths() const {
+    QStringList result;
+    std::function<void(FolderNode*)> collect = [&](FolderNode* node) {
+        if (node != root_.get()) {
+            result.append(node->path);
+        }
+        for (const auto& child : node->children) {
+            collect(child.get());
+        }
+    };
+    if (root_) collect(root_.get());
+    return result;
+}
+
 QStringList FolderTreeModel::get_pinned_folders() const {
     QStringList result;
     std::function<void(FolderNode*)> collect = [&](FolderNode* node) {

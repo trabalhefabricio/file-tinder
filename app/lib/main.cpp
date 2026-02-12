@@ -18,6 +18,7 @@
 #include <QHeaderView>
 #include <QFileInfo>
 #include <QMouseEvent>
+#include <QTimer>
 
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
@@ -277,10 +278,10 @@ private:
         
         connect(dlg, &StandaloneFileTinderDialog::switch_to_advanced_mode, this, [this, dlg]() {
             dlg->done(QDialog::Accepted);
-            launch_advanced();
+            // Defer mode switch to break recursive exec() chain
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_advanced);
         });
         
-        // Initialize first (builds UI, scans files, sets size), then exec() shows and runs event loop
         dlg->initialize();
         dlg->exec();
         dlg->deleteLater();
@@ -295,10 +296,10 @@ private:
         
         connect(dlg, &AdvancedFileTinderDialog::switch_to_basic_mode, this, [this, dlg]() {
             dlg->done(QDialog::Accepted);
-            launch_basic();
+            // Defer mode switch to break recursive exec() chain
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_basic);
         });
         
-        // Initialize first (builds UI, scans files, sets size), then exec() shows and runs event loop
         dlg->initialize();
         dlg->exec();
         dlg->deleteLater();

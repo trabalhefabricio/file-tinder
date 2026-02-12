@@ -226,9 +226,9 @@ void MindMapView::place_folder_node(FolderNode* node) {
     connect(btn, &FolderButton::folder_clicked, this, &MindMapView::folder_clicked);
     connect(btn, &FolderButton::folder_right_clicked, this, &MindMapView::folder_context_menu);
     
-    // Advance: go down in current column, wrap to next column after kMaxRowsPerCol
+    // Advance: go down in current column, wrap to next column
     next_row_++;
-    if (next_row_ >= kMaxRowsPerCol) {
+    if (next_row_ >= max_rows_per_col_) {
         next_row_ = 0;
         next_col_++;
     }

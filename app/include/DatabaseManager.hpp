@@ -72,6 +72,13 @@ public:
     bool remove_execution_log_entry(int id);
     bool clear_execution_log(const QString& session_folder);
     
+    // Grid configuration save/load
+    bool save_grid_config(const QString& session_folder, const QString& config_name,
+                         const QStringList& folder_paths);
+    QStringList get_grid_config(const QString& session_folder, const QString& config_name);
+    QStringList get_grid_config_names(const QString& session_folder);
+    bool delete_grid_config(const QString& session_folder, const QString& config_name);
+    
     // Maintenance
     int cleanup_stale_sessions(int days_old = 30);
     

@@ -1129,27 +1129,45 @@ void StandaloneFileTinderDialog::show_review_summary() {
         
         // Decision (editable via combo box)
         auto* combo = new QComboBox();
-        combo->addItems({"keep", "delete", "skip", "pending"});
-        combo->setCurrentText(file.decision == "move" ? "keep" : file.decision);
-        // If it was a move, include that option
-        if (file.decision == "move") {
-            combo->addItem("move");
-            combo->setCurrentText("move");
-        }
+        combo->addItems({"keep", "delete", "skip", "pending", "move"});
+        combo->setCurrentText(file.decision);
         table->setCellWidget(visible_row, 1, combo);
         
-        // Destination (read-only display)
-        QString dest_display;
-        if (file.decision == "move" && !file.destination_folder.isEmpty()) {
-            dest_display = QFileInfo(file.destination_folder).fileName();
-            if (!QDir(file.destination_folder).exists()) {
-                dest_display += " [NEW]";
+        // Destination (dropdown with grid folders + "Other...")
+        auto* dest_combo = new QComboBox();
+        dest_combo->addItem("(none)", QString());
+        dest_combo->addItem("Other...", "__other__");
+        QStringList grid_folders = get_destination_folders();
+        for (const QString& fp : grid_folders) {
+            QString label = QFileInfo(fp).fileName();
+            if (!QDir(fp).exists()) label += " [NEW]";
+            dest_combo->addItem(label, fp);
+        }
+        // Set current destination
+        if (!file.destination_folder.isEmpty()) {
+            int idx_found = dest_combo->findData(file.destination_folder);
+            if (idx_found >= 0) {
+                dest_combo->setCurrentIndex(idx_found);
+            } else {
+                // Not in grid — add it as an entry
+                dest_combo->addItem(QFileInfo(file.destination_folder).fileName(), file.destination_folder);
+                dest_combo->setCurrentIndex(dest_combo->count() - 1);
             }
         }
-        auto* dest_item = new QTableWidgetItem(dest_display);
-        dest_item->setFlags(dest_item->flags() & ~Qt::ItemIsEditable);
-        dest_item->setToolTip(file.destination_folder);
-        table->setItem(visible_row, 2, dest_item);
+        dest_combo->setToolTip(file.destination_folder);
+        // Handle "Other..." selection
+        connect(dest_combo, QOverload<int>::of(&QComboBox::activated), this, [this, dest_combo](int idx) {
+            if (dest_combo->itemData(idx).toString() == "__other__") {
+                QString folder = QFileDialog::getExistingDirectory(this, "Choose Destination", source_folder_);
+                if (!folder.isEmpty()) {
+                    dest_combo->addItem(QFileInfo(folder).fileName(), folder);
+                    dest_combo->setCurrentIndex(dest_combo->count() - 1);
+                } else {
+                    dest_combo->setCurrentIndex(0);  // back to "(none)"
+                }
+            }
+        });
+        table->setCellWidget(visible_row, 2, dest_combo);
         
         // Mode column (Req 22-23): moves with destinations are from Advanced, others from current mode
         QString file_mode = (file.decision == "move" && !file.destination_folder.isEmpty())
@@ -1208,14 +1226,23 @@ void StandaloneFileTinderDialog::show_review_summary() {
             auto& file = files_[file_idx];
             QString new_decision = combo->currentText();
             
-            if (new_decision != file.decision) {
-                // Update counts
+            // Read destination from dest combo
+            auto* dest_combo = qobject_cast<QComboBox*>(table->cellWidget(r, 2));
+            QString new_dest;
+            if (dest_combo) {
+                new_dest = dest_combo->currentData().toString();
+                if (new_dest == "__other__") new_dest.clear();
+            }
+            
+            if (new_decision != file.decision || new_dest != file.destination_folder) {
                 update_decision_count(file.decision, -1);
                 if (new_decision != "pending") {
                     update_decision_count(new_decision, 1);
                 }
-                if (new_decision == "pending" || new_decision != "move") {
-                    // Clear destination when not a move
+                // If decision is "move" and has a destination, set it
+                if (new_decision == "move" && !new_dest.isEmpty()) {
+                    file.destination_folder = new_dest;
+                } else if (new_decision != "move") {
                     file.destination_folder.clear();
                 }
                 file.decision = new_decision;
@@ -1855,6 +1882,10 @@ void StandaloneFileTinderDialog::animate_swipe(bool forward) {
     });
     
     swipe_animation_->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+QStringList StandaloneFileTinderDialog::get_destination_folders() const {
+    return {};  // Base class has no grid folders
 }
 
 // Shortcuts help dialog

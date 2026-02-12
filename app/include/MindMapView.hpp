@@ -79,10 +79,14 @@ private:
     QMap<QString, QPair<int, int>> grid_positions_;
     int next_row_;
     int next_col_;
-    static const int kMaxRowsPerCol = 6;  // Items per column before wrapping to next column
+    int max_rows_per_col_ = 6;  // Configurable items per column before wrapping
     
     void build_grid();
     void place_folder_node(FolderNode* node);
+    
+public:
+    void set_max_rows_per_col(int rows) { max_rows_per_col_ = qMax(1, rows); }
+    int max_rows_per_col() const { return max_rows_per_col_; }
 };
 
 #endif // MIND_MAP_VIEW_HPP

@@ -199,6 +199,7 @@ protected:
     void show_review_summary();
     void execute_decisions();
     void show_execution_results(const ExecutionResult& result, qint64 elapsed_ms);
+    virtual QStringList get_destination_folders() const;  // Grid folders for review dropdown
     
     // Help
     void show_shortcuts_help();

@@ -73,6 +73,7 @@ public:
     QStringList get_virtual_folders() const;
     QStringList get_pinned_folders() const;
     QStringList get_connected_folders(int group_id) const;
+    QStringList get_all_folder_paths() const;  // All non-root folder paths in tree
     QModelIndex index_for_path(const QString& path) const;
     FolderNode* root_node() const { return root_.get(); }
     
