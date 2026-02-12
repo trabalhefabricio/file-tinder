@@ -1,0 +1,276 @@
+# File Tinder AI Mode — Design Proposal
+
+## The Question
+
+> How would you conceptualize an AI mode that works similar but differently than advanced mode?
+
+## Answer: AI Mode as a "Suggestion-First" Workflow
+
+The core insight is this: **Basic Mode is manual-sequential, Advanced Mode is manual-spatial, and AI Mode should be automatic-confirmational.** Instead of you deciding where each file goes one-by-one, the AI pre-sorts *everything* and you review its work — accepting, correcting, or overriding suggestions in bulk.
+
+---
+
+## How It Differs from Basic & Advanced
+
+| Aspect | Basic Mode | Advanced Mode | AI Mode |
+|--------|-----------|---------------|---------|
+| **Who decides** | You, one file at a time | You, with folder tree visible | AI suggests, you confirm |
+| **File order** | Sequential (by filter/sort) | Sequential (by filter/sort) | Grouped by AI category |
+| **Primary action** | Swipe: Keep/Delete/Skip | Click folder to assign | Accept/Reject AI suggestion |
+| **Mental model** | "What do I do with this file?" | "Which folder does this go to?" | "Did the AI get this right?" |
+| **Speed** | ~2-5 seconds per file | ~1-3 seconds per file | ~0.5s per file (bulk confirm) |
+| **Best for** | Small folders, simple cleanup | Complex folder structures | Large folders (100+ files), initial sort |
+
+The key difference: **you never start from a blank decision.** Every file already has a suggested action when you see it.
+
+---
+
+## UI Concept
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    FILE TINDER — AI MODE                                     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  AI Confidence: ████████████░░░░ 78% overall  │  [Re-analyze] [Settings ⚙]  │
+│                                                                              │
+│  ┌─ Category: "Vacation Photos" (34 files) ──────────── Confidence: 92% ─┐  │
+│  │                                                                        │  │
+│  │  ✅ IMG_2041.jpg  3.2MB  →  Images/Vacation     [✓ Accept] [✗ Change]  │  │
+│  │  ✅ IMG_2042.jpg  2.8MB  →  Images/Vacation     [✓ Accept] [✗ Change]  │  │
+│  │  ✅ beach.png     1.1MB  →  Images/Vacation     [✓ Accept] [✗ Change]  │  │
+│  │  ⚠️  notes.txt    4KB    →  Documents/Travel    [✓ Accept] [✗ Change]  │  │
+│  │  ...                                                                    │  │
+│  │                                                                        │  │
+│  │  [✓ Accept All 34] [✗ Reject Category] [📁 Change Destination]         │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌─ Category: "Work Documents" (18 files) ───────────── Confidence: 85% ─┐  │
+│  │  ✅ report_Q3.pdf    1.4MB  →  Documents/Work   [✓ Accept] [✗ Change] │  │
+│  │  ✅ slides.pptx      8.2MB  →  Documents/Work   [✓ Accept] [✗ Change] │  │
+│  │  ⚠️  budget.xlsx     245KB  →  Documents/Work   [✓ Accept] [✗ Change] │  │
+│  │  ...                                                                    │  │
+│  │  [✓ Accept All 18] [✗ Reject Category] [📁 Change Destination]         │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌─ Category: "Delete Candidates" (45 files) ────────── Confidence: 71% ─┐  │
+│  │  🗑️  .DS_Store       4KB    →  DELETE            [✓ Accept] [✗ Keep]   │  │
+│  │  🗑️  thumbs.db       12KB   →  DELETE            [✓ Accept] [✗ Keep]   │  │
+│  │  ⚠️  old_draft.docx  340KB  →  DELETE            [✓ Accept] [✗ Keep]   │  │
+│  │  ...                                                                    │  │
+│  │  [✓ Accept All 45] [✗ Keep All] [👁 Review One-by-One]                  │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ┌─ Unsure (12 files) ───────────────────────────── Confidence: <50%  ───┐  │
+│  │  ❓ random_file.bin   890KB  →  ???              [Decide manually]      │  │
+│  │  ❓ screenshot_3.png  1.2MB  →  ???              [Decide manually]      │  │
+│  │  ...                                                                    │  │
+│  │  [Open in Basic Mode] [Open in Advanced Mode]                           │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  ═══════════════════════════════════════════════════════════════════════════  │
+│  Accepted: 52/109  │  Changed: 8  │  Remaining: 49                          │
+│                                                                              │
+│  [← Back to Launcher]                              [Execute Accepted ✓]     │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The Flow
+
+1. **Scan & Analyze**: On launch, AI Mode scans all files and runs classification. A progress dialog shows "Analyzing 342 files..." with a progress bar. This takes a few seconds.
+
+2. **Present Grouped Results**: Files appear grouped by AI-determined category, not one-at-a-time. Each category shows a confidence score and suggested destination.
+
+3. **Bulk Accept/Reject**: The user's primary action is "Accept All" on high-confidence categories — potentially sorting 50+ files in one click. Low-confidence files get individual attention.
+
+4. **Fallback to Manual**: The "Unsure" category at the bottom contains files the AI couldn't classify confidently. Buttons let you send these to Basic or Advanced mode for manual sorting.
+
+5. **Execute**: Same review & execute flow as Basic/Advanced modes.
+
+---
+
+## How the AI Classification Works (Without External APIs)
+
+The AI mode doesn't need a neural network or cloud API. It uses **rule-based heuristics enhanced with learned patterns** — entirely local, entirely offline:
+
+### Tier 1: Metadata Rules (Instant, 100% local)
+
+```
+MIME type → Category mapping:
+  image/*         → "Images"
+  video/*         → "Videos"  
+  audio/*         → "Audio"
+  text/*, *pdf*, *document*  → "Documents"
+  *zip*, *archive*           → "Archives"
+
+Filename pattern rules:
+  .DS_Store, Thumbs.db, desktop.ini     → "Delete: System Junk"
+  *.tmp, *.bak, ~*                      → "Delete: Temporary Files"
+  Screenshot*, Screen Shot*             → "Images/Screenshots"
+  IMG_*, DSC_*, DCIM*                   → "Images/Camera"
+  *.log                                 → "Delete: Log Files"
+
+Size-based rules:
+  0 bytes                               → "Delete: Empty Files"
+  Exact duplicate (same name+size)      → "Delete: Duplicates" (already detected)
+```
+
+### Tier 2: Content-Aware Grouping (Local analysis)
+
+```
+Date clustering:
+  Files modified within the same week → group together
+  "January 2024 files", "Last week's downloads"
+
+Name similarity:
+  report_v1.docx, report_v2.docx, report_final.docx → "Document Versions"
+  IMG_2041.jpg through IMG_2089.jpg → "Photo Series (48 photos)"
+
+Extension grouping:
+  All .py files → "Code/Python"
+  All .jsx/.tsx files → "Code/React"
+```
+
+### Tier 3: Learned Patterns (From user history)
+
+```
+Session learning:
+  "User previously moved *.pdf from Downloads to Documents/Receipts"
+  "User keeps files >10MB, deletes files <1KB in this folder"
+  "User always deletes .tmp files"
+  
+Cross-session patterns:
+  Track decision frequency per (extension, size_bucket, source_folder)
+  Build a simple decision table over time
+```
+
+### Confidence Scoring
+
+```
+High (>80%):   MIME-based category + name matches known pattern
+Medium (50-80): MIME matches but name is ambiguous
+Low (<50%):    Unknown extension, no pattern match, conflicting signals
+```
+
+---
+
+## Architecture: How It Fits in the Codebase
+
+### Class Hierarchy
+
+```
+StandaloneFileTinderDialog (Basic Mode)
+    └── AdvancedFileTinderDialog (Advanced Mode)
+            └── AiFileTinderDialog (AI Mode)    ← new
+
+FileClassifier           ← new: rule engine that categorizes files
+ClassificationResult     ← new: struct holding category + confidence + suggestion
+```
+
+AI Mode inherits from `AdvancedFileTinderDialog` because it reuses:
+- File scanning (`scan_files()`)
+- Session persistence (`save_session_state()` / `load_session_state()`)
+- The review & execute pipeline (`show_review_summary()`, `execute_decisions()`)
+- Filter/sort infrastructure
+- Database manager integration
+
+But it **overrides `setup_ui()`** completely — the UI is a scrollable list of category groups, not a swipe card or mind map.
+
+### New Files
+
+```
+app/include/AiFileTinderDialog.hpp    — AI mode dialog
+app/lib/AiFileTinderDialog.cpp        — AI mode implementation
+app/include/FileClassifier.hpp        — Classification engine
+app/lib/FileClassifier.cpp            — Rule engine + learned patterns
+```
+
+### New Database Tables
+
+```sql
+-- Learned classification patterns (Tier 3)
+CREATE TABLE ai_classification_patterns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    extension TEXT,                    -- e.g. ".pdf"
+    name_pattern TEXT,                 -- e.g. "receipt*"
+    size_bucket TEXT,                  -- e.g. "1KB-1MB"
+    source_folder_pattern TEXT,        -- e.g. "*/Downloads"
+    suggested_decision TEXT NOT NULL,  -- "keep", "delete", "move"
+    suggested_destination TEXT,        -- e.g. "Documents/Receipts"
+    frequency INTEGER DEFAULT 1,      -- how many times this pattern was confirmed
+    last_used DATETIME
+);
+
+-- AI session categories (for resuming AI sessions)
+CREATE TABLE ai_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_folder TEXT NOT NULL,
+    category_name TEXT NOT NULL,
+    suggested_destination TEXT,
+    confidence REAL,
+    accepted INTEGER DEFAULT 0       -- 1 = user accepted this category
+);
+```
+
+### Integration with Launcher
+
+```cpp
+// In main.cpp FileTinderLauncher — add a third mode button:
+
+auto* ai_btn = new QPushButton("🤖 AI Mode");
+ai_btn->setToolTip("Let AI pre-sort your files, then review and confirm");
+connect(ai_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_ai);
+
+void launch_ai() {
+    // Same pattern as launch_basic / launch_advanced
+    auto* dlg = new AiFileTinderDialog(chosen_path_, db_manager_, this);
+    connect(dlg, &AiFileTinderDialog::switch_to_basic_mode, ...);
+    connect(dlg, &AiFileTinderDialog::switch_to_advanced_mode, ...);
+    dlg->initialize();
+    dlg->exec();
+    dlg->deleteLater();
+}
+```
+
+### Mode Switching
+
+AI Mode can switch to Basic or Advanced for "Unsure" files:
+
+```
+AI Mode  →  "Open unsure files in Basic Mode"  →  Basic Mode (filtered to unsure files only)
+AI Mode  →  "Open unsure files in Advanced Mode" → Advanced Mode (with AI-suggested folders pre-loaded)
+```
+
+---
+
+## What Makes This Different from Advanced Mode
+
+Advanced Mode says: *"Here are your folders. Here's a file. You decide."*
+
+AI Mode says: *"I've already sorted everything. Did I get it right?"*
+
+The mental model flips from **decision-making** to **decision-reviewing**. This is fundamentally faster because:
+
+1. **Saying "yes" is faster than choosing** — confirming a suggestion takes ~0.5s, picking from a folder tree takes ~2s
+2. **Bulk operations** — accepting a whole category at once is not possible in Basic/Advanced
+3. **Smart ordering** — high-confidence categories appear first, so you blast through easy files quickly and spend time only on genuinely ambiguous ones
+4. **Learning** — the more you use it, the better it gets. After 3-4 sessions on your Downloads folder, it knows your patterns
+
+### The "Similar But Different" Aspect
+
+- **Similar**: Same file set, same scan, same database, same execute pipeline, same undo, same session persistence
+- **Different**: No swiping, no one-at-a-time, no folder tree clicking. The interaction model is *review a pre-computed plan* rather than *build a plan from scratch*
+
+It's the difference between a chef preparing a meal from scratch (Basic/Advanced) versus a meal kit where ingredients are pre-sorted and you just confirm the recipe (AI Mode).
+
+---
+
+## Summary
+
+AI Mode is the third leg of the stool:
+
+- **Basic**: I want to quickly clean up a small folder → *swipe, swipe, swipe*
+- **Advanced**: I have a complex folder structure to sort into → *click, click, click*
+- **AI**: I have hundreds of files and want it done fast → *accept, accept, accept, fix a few, done*
+
+It reuses the entire existing infrastructure (scanning, persistence, execution, undo) but replaces the *input* model — from "tell me what to do with each file" to "here's what I'd do, correct me where I'm wrong."
