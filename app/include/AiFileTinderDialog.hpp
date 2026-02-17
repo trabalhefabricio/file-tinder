@@ -137,8 +137,7 @@ private:
                                   const QStringList& available_folders);
 
     // Parse AI response into suggestions
-    std::vector<AiFileSuggestion> parse_ai_response(const QString& response,
-                                                      const QMap<int, int>& batch_index_map);
+    std::vector<AiFileSuggestion> parse_ai_response(const QString& response);
 
     // Send one batch to the API and return the response text (blocking)
     QString send_api_request(const QString& prompt, QString& error_out);

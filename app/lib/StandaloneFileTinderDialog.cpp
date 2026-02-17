@@ -1315,8 +1315,13 @@ void StandaloneFileTinderDialog::show_review_summary() {
         });
         table->setCellWidget(visible_row, 2, dest_combo);
         
-        // Mode column: current dialog's mode name for all decisions
-        auto* mode_item = new QTableWidgetItem(mode_name);
+        // Mode column: moves with destinations from Advanced/AI modes; others from current mode
+        QString mode_for_row = mode_name;
+        if (file.decision == "move" && !file.destination_folder.isEmpty()
+            && mode_name == "Basic") {
+            mode_for_row = "Advanced";
+        }
+        auto* mode_item = new QTableWidgetItem(mode_for_row);
         mode_item->setFlags(mode_item->flags() & ~Qt::ItemIsEditable);
         table->setItem(visible_row, 3, mode_item);
         

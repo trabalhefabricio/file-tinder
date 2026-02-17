@@ -36,6 +36,8 @@ static const int kBatchSize = 50;
 // Timeout for API requests (ms) — higher for local LLMs
 static const int kCloudTimeoutMs = 60000;
 static const int kLocalTimeoutMs = 120000;
+// Custom role to tag AI-injected quick access items
+static const int kAiSuggestionRole = Qt::UserRole + 100;
 
 // ============================================================
 // AiSetupDialog
@@ -95,6 +97,12 @@ void AiSetupDialog::build_ui() {
     key_row->addWidget(api_key_edit_, 1);
     prov_layout->addLayout(key_row);
 
+    auto* key_warning = new QLabel("\xe2\x9a\xa0\xef\xb8\x8f API keys are stored locally in plaintext. "
+        "Do not use on shared or untrusted machines.");
+    key_warning->setStyleSheet("color: #e67e22; font-size: 9px;");
+    key_warning->setWordWrap(true);
+    prov_layout->addWidget(key_warning);
+
     auto* ep_row = new QHBoxLayout();
     ep_row->addWidget(new QLabel("Endpoint:"));
     endpoint_edit_ = new QLineEdit();
@@ -108,6 +116,9 @@ void AiSetupDialog::build_ui() {
     model_edit_->setPlaceholderText("gpt-4o-mini");
     model_row->addWidget(model_edit_, 1);
     prov_layout->addLayout(model_row);
+
+    // Recalculate cost when model name changes (free models suppress warning)
+    connect(model_edit_, &QLineEdit::textChanged, this, [this]() { update_cost_estimate(); });
 
     auto* rate_row = new QHBoxLayout();
     rate_row->addWidget(new QLabel("Rate limit (req/min):"));
@@ -303,9 +314,11 @@ void AiSetupDialog::load_saved_provider() {
     if (!names.isEmpty()) {
         QString name = names.first();
         int idx = provider_combo_->findText(name);
-        if (idx >= 0) provider_combo_->setCurrentIndex(idx);
-        else provider_combo_->setCurrentText(name);
-        emit provider_combo_->currentTextChanged(name);
+        if (idx >= 0) {
+            provider_combo_->setCurrentIndex(idx);
+        } else {
+            provider_combo_->setCurrentText(name);
+        }
     }
 }
 
@@ -321,9 +334,13 @@ void AiSetupDialog::save_provider_config() {
 
 void AiSetupDialog::update_cost_estimate() {
     QString provider = provider_combo_->currentText();
+    QString model = model_edit_->text();
     bool is_local = provider.contains("Ollama") || provider.contains("LM Studio")
                     || provider.contains("Local");
-    if (is_local || provider.contains("free") || provider.contains("Free")) {
+    bool is_free = provider.contains("free", Qt::CaseInsensitive)
+                   || model.contains("free", Qt::CaseInsensitive)
+                   || model.contains(":free");
+    if (is_local || is_free) {
         cost_label_->setText("");
         return;
     }
@@ -407,8 +424,10 @@ void AiFileTinderDialog::initialize() {
             QAction* selected = menu.exec(switch_mode_btn_->mapToGlobal(
                 QPoint(0, switch_mode_btn_->height())));
             if (selected == basic_action) {
+                save_session_state();
                 emit switch_to_basic_mode();
             } else if (selected == adv_action) {
+                save_session_state();
                 emit switch_to_advanced_mode();
             }
         });
@@ -482,6 +501,21 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
     if (files_.empty()) {
         QMessageBox::information(this, "No Files", "No files to analyze.");
         return;
+    }
+
+    // When overwriting all decisions, reset existing ones first
+    if (!remaining_only) {
+        for (auto& file : files_) {
+            if (file.decision == "move" && folder_model_) {
+                folder_model_->unassign_file_from_folder(file.destination_folder);
+            }
+            if (file.decision == "keep") keep_count_--;
+            else if (file.decision == "delete") delete_count_--;
+            else if (file.decision == "skip") skip_count_--;
+            else if (file.decision == "move") move_count_--;
+            file.decision = "pending";
+            file.destination_folder.clear();
+        }
     }
 
     // Determine which files to analyze
@@ -597,12 +631,8 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
 
         // Build batch file list
         QStringList batch_files;
-        QMap<int, int> batch_index_map; // maps original file index to position in batch
         for (int i = start; i < end; ++i) {
             batch_files.append(file_descriptions[i]);
-            // Parse original file index from the description string
-            int orig_idx = file_descriptions[i].split('|').first().toInt();
-            batch_index_map[orig_idx] = i - start;
         }
 
         // Check rate limit
@@ -650,7 +680,7 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
         double batch_secs = batch_timer.elapsed() / 1000.0;
 
         // Parse response
-        auto batch_suggestions = parse_ai_response(response, batch_index_map);
+        auto batch_suggestions = parse_ai_response(response);
         int parsed_count = static_cast<int>(batch_suggestions.size());
         files_classified += parsed_count;
 
@@ -665,13 +695,10 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
             for (const auto& s : batch_suggestions) parsed_indices.insert(s.file_index);
 
             QStringList retry_files;
-            QMap<int, int> retry_map;
-            int retry_pos = 0;
             for (int i = start; i < end; ++i) {
                 int orig_idx = file_descriptions[i].split('|').first().toInt();
                 if (!parsed_indices.contains(orig_idx)) {
                     retry_files.append(file_descriptions[i]);
-                    retry_map[orig_idx] = retry_pos++;
                 }
             }
 
@@ -681,7 +708,7 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
                 QString retry_error;
                 QString retry_response = send_api_request(retry_prompt, retry_error);
                 if (retry_error.isEmpty()) {
-                    auto retry_results = parse_ai_response(retry_response, retry_map);
+                    auto retry_results = parse_ai_response(retry_response);
                     for (auto& s : retry_results) {
                         batch_suggestions.push_back(s);
                     }
@@ -940,7 +967,7 @@ QString AiFileTinderDialog::send_api_request(const QString& prompt, QString& err
 }
 
 std::vector<AiFileSuggestion> AiFileTinderDialog::parse_ai_response(
-    const QString& response, const QMap<int, int>& batch_index_map) {
+    const QString& response) {
 
     std::vector<AiFileSuggestion> results;
 
@@ -1028,6 +1055,14 @@ std::vector<AiFileSuggestion> AiFileTinderDialog::parse_ai_response(
 }
 
 void AiFileTinderDialog::apply_auto_suggestions() {
+    // Build set of valid folders for validation
+    QSet<QString> valid_folders;
+    valid_folders.insert(source_folder_);
+    if (folder_model_) {
+        for (const QString& p : folder_model_->get_all_folder_paths())
+            valid_folders.insert(p);
+    }
+
     for (const auto& s : suggestions_) {
         if (s.file_index < 0 || s.file_index >= static_cast<int>(files_.size())) continue;
 
@@ -1036,6 +1071,14 @@ void AiFileTinderDialog::apply_auto_suggestions() {
         if (s.suggested_folders.isEmpty()) continue;
 
         QString dest = s.suggested_folders.first();
+
+        // Validate: in KeepExisting mode, dest must be a known folder;
+        // in generation modes, dest must be under source_folder_
+        if (category_mode_ == AiCategoryMode::KeepExisting) {
+            if (!valid_folders.contains(dest)) continue;
+        } else {
+            if (!dest.startsWith(source_folder_)) continue;
+        }
 
         if (dest == source_folder_) {
             file.decision = "keep";
@@ -1087,9 +1130,9 @@ void AiFileTinderDialog::highlight_suggested_folders(const QStringList& folders)
         mind_map_view_->set_selected_folder(folders.first());
     }
 
-    // Add AI suggestions to quick access temporarily
+    // Add AI suggestions to quick access temporarily (insert in reverse to maintain rank order)
     if (quick_access_list_) {
-        for (int i = 0; i < folders.size(); ++i) {
+        for (int i = folders.size() - 1; i >= 0; --i) {
             QString path = folders[i];
             QString name = QFileInfo(path).fileName();
             if (name.length() > 12) name = name.left(11) + "\xe2\x80\xa6";
@@ -1097,6 +1140,7 @@ void AiFileTinderDialog::highlight_suggested_folders(const QStringList& folders)
 
             auto* item = new QListWidgetItem(label);
             item->setData(Qt::UserRole, path);
+            item->setData(kAiSuggestionRole, true);  // Tag as AI suggestion
             item->setToolTip(QString("AI suggestion: %1").arg(path));
             item->setSizeHint(QSize(ui::scaling::scaled(120), ui::scaling::scaled(28)));
             item->setBackground(QColor("#1a3a5c"));
@@ -1112,7 +1156,7 @@ void AiFileTinderDialog::clear_folder_highlights() {
     if (quick_access_list_) {
         for (int i = quick_access_list_->count() - 1; i >= 0; --i) {
             auto* item = quick_access_list_->item(i);
-            if (item && item->text().startsWith("AI ")) {
+            if (item && item->data(kAiSuggestionRole).toBool()) {
                 delete quick_access_list_->takeItem(i);
             }
         }

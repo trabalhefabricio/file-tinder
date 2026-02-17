@@ -225,8 +225,10 @@ void MindMapView::build_grid() {
 void MindMapView::place_folder_node(FolderNode* node) {
     auto* btn = new FolderButton(node, content_widget_);
     
-    // Apply display mode sizing
-    if (!compact_mode_) {
+    // Apply display mode sizing: ensure uniform row height in both modes
+    if (compact_mode_) {
+        btn->setFixedSize(ui::scaling::scaled(120), ui::scaling::scaled(32));
+    } else {
         btn->setFixedSize(ui::scaling::scaled(180), ui::scaling::scaled(36));
     }
     
