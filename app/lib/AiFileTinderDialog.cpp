@@ -1010,7 +1010,7 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
                     QString trimmed = line.trimmed();
                     if (!trimmed.isEmpty() && trimmed != source_folder_) {
                         if (!trimmed.startsWith(source_folder_)) {
-                            trimmed = source_folder_ + "/" + trimmed;
+                            trimmed = QDir::cleanPath(source_folder_ + "/" + trimmed);
                         }
                         new_folders.insert(trimmed);
                     }

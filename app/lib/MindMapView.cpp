@@ -3,6 +3,7 @@
 #include "ui_constants.hpp"
 #include <QContextMenuEvent>
 #include <QMouseEvent>
+#include <QDir>
 #include <QDrag>
 #include <QMimeData>
 #include <QDragEnterEvent>
@@ -30,9 +31,10 @@ void FolderButton::update_display() {
     QString name;
     if (show_full_path_) {
         name = node_->path;
-        QStringList parts = name.split('/');
+        QStringList parts = name.split(QDir::separator());
+        if (parts.size() <= 2) parts = name.split('/');  // fallback for stored paths
         if (parts.size() > 2) {
-            name = parts.mid(parts.size() - 2).join("/");
+            name = parts.mid(parts.size() - 2).join(QDir::separator());
         }
         // For single-component paths, just use the full path as-is
     } else {

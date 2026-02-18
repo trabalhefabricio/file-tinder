@@ -1394,8 +1394,8 @@ void StandaloneFileTinderDialog::show_review_summary() {
                 if (new_dest.isEmpty() && dest_combo->currentText() != "(none)") {
                     QString typed = dest_combo->currentText().trimmed();
                     if (!typed.isEmpty()) {
-                        if (!typed.startsWith("/")) {
-                            typed = source_folder_ + "/" + typed;
+                        if (!typed.startsWith("/") && !typed.contains(":/")) {
+                            typed = QDir::cleanPath(source_folder_ + "/" + typed);
                         }
                         new_dest = typed;
                     }
@@ -1472,9 +1472,10 @@ void StandaloneFileTinderDialog::execute_decisions() {
     // Execute copy operations
     for (const auto& [src, dest_folder] : files_to_copy) {
         if (failed_folders.contains(dest_folder)) continue;
-        QString dest_path = dest_folder + "/" + QFileInfo(src).fileName();
+        QString dest_path = QDir::cleanPath(dest_folder + "/" + QFileInfo(src).fileName());
         if (!QFile::copy(src, dest_path)) {
-            LOG_WARN("Execute", QString("Failed to copy: %1 -> %2").arg(src, dest_path));
+            LOG_WARN("Execute", QString("Failed to copy: %1 -> %2 (error: %3)")
+                .arg(src, dest_path, QFile(src).errorString()));
         }
     }
     
