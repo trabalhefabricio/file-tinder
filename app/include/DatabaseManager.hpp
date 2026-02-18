@@ -43,7 +43,7 @@ public:
     std::vector<FileDecision> get_session_decisions(const QString& session_folder);
     bool clear_session(const QString& session_folder);
     FileDecision get_file_decision(const QString& session_folder, const QString& file_path);
-    int get_session_pending_count(const QString& session_folder);
+    int get_session_progress_count(const QString& session_folder);
     
     // Folder tree management
     bool save_folder_tree_entry(const QString& session_folder, const FolderTreeEntry& entry);

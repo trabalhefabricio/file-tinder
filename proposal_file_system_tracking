@@ -133,6 +133,8 @@ VI. TECHNICAL CONSIDERATIONS
 
 - File hashing: Use SHA-256 for content identification but cache hashes to avoid
   re-computing on every scan. Only re-hash if size or modified date changed.
+  Note: The current duplicate detection uses MD5 for speed; the full tracking
+  system should use SHA-256 for stronger uniqueness guarantees.
 
 - Privacy: All data stays local. No cloud sync of file registry.
   User can delete tracking data for specific directories.

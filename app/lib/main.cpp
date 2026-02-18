@@ -74,7 +74,7 @@ public:
             );
             
             // Check for resumable session
-            int progress = db_manager_.get_session_pending_count(last_folder);
+            int progress = db_manager_.get_session_progress_count(last_folder);
             if (progress > 0 && resume_label_) {
                 resume_label_->setText(QString("Session in progress: %1 files sorted. Click a mode to resume.")
                     .arg(progress));

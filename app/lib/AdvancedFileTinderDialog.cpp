@@ -318,6 +318,7 @@ void AdvancedFileTinderDialog::setup_mind_map() {
                     for (const QString& f : folders)
                         folder_model_->add_folder(source_folder_ + "/" + f, true);
                     folder_model_->blockSignals(false);
+                    emit folder_model_->folder_structure_changed();
                 }
                 if (mind_map_view_) mind_map_view_->refresh_layout();
             });
