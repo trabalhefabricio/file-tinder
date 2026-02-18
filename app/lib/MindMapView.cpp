@@ -27,9 +27,19 @@ FolderButton::FolderButton(FolderNode* node, QWidget* parent)
 }
 
 void FolderButton::update_display() {
-    QString name = node_->display_name;
-    if (name.isEmpty()) {
-        name = QFileInfo(node_->path).fileName();
+    QString name;
+    if (show_full_path_) {
+        name = node_->path;
+        QStringList parts = name.split('/');
+        if (parts.size() > 2) {
+            name = parts.mid(parts.size() - 2).join("/");
+        }
+        // For single-component paths, just use the full path as-is
+    } else {
+        name = node_->display_name;
+        if (name.isEmpty()) {
+            name = QFileInfo(node_->path).fileName();
+        }
     }
     
     // Compact display: name + count
@@ -189,12 +199,14 @@ void MindMapView::build_grid() {
     FolderNode* root = model_->root_node();
     
     // Button dimensions based on display mode
-    int btn_w = compact_mode_ ? ui::scaling::scaled(120) : ui::scaling::scaled(180);
+    int btn_w = custom_width_ > 0 ? ui::scaling::scaled(custom_width_)
+                                   : (compact_mode_ ? ui::scaling::scaled(120) : ui::scaling::scaled(180));
     int btn_h = compact_mode_ ? ui::scaling::scaled(32) : ui::scaling::scaled(36);
     int font_size = compact_mode_ ? 11 : 12;
     
     // Root folder in column 0, spanning all rows that children will use
     auto* root_btn = new FolderButton(root, content_widget_);
+    root_btn->set_show_full_path(show_full_paths_);
     root_btn->setFixedSize(btn_w, btn_h);
     root_btn->setStyleSheet(
         QString("QPushButton { text-align: center; padding: 2px 6px; "
@@ -224,12 +236,15 @@ void MindMapView::build_grid() {
 
 void MindMapView::place_folder_node(FolderNode* node) {
     auto* btn = new FolderButton(node, content_widget_);
+    btn->set_show_full_path(show_full_paths_);
     
     // Apply display mode sizing: ensure uniform row height in both modes
     if (compact_mode_) {
-        btn->setFixedSize(ui::scaling::scaled(120), ui::scaling::scaled(32));
+        int w = custom_width_ > 0 ? ui::scaling::scaled(custom_width_) : ui::scaling::scaled(120);
+        btn->setFixedSize(w, ui::scaling::scaled(32));
     } else {
-        btn->setFixedSize(ui::scaling::scaled(180), ui::scaling::scaled(36));
+        int w = custom_width_ > 0 ? ui::scaling::scaled(custom_width_) : ui::scaling::scaled(180);
+        btn->setFixedSize(w, ui::scaling::scaled(36));
     }
     
     buttons_[node->path] = btn;

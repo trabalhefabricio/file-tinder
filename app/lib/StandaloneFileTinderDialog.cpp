@@ -1271,21 +1271,19 @@ void StandaloneFileTinderDialog::show_review_summary() {
         
         // Decision (editable via combo box)
         auto* combo = new QComboBox();
-        combo->addItems({"keep", "delete", "skip", "pending"});
-        if (file.decision == "move") {
-            combo->addItem("move");
-        }
+        combo->addItems({"keep", "delete", "skip", "move", "copy", "pending"});
         combo->setCurrentText(file.decision);
         table->setCellWidget(visible_row, 1, combo);
         
-        // Destination (dropdown with grid folders + "Other...")
+        // Destination (editable dropdown — type paths or select from grid/AI suggestions)
         auto* dest_combo = new QComboBox();
+        dest_combo->setEditable(true);
         dest_combo->addItem("(none)", QString());
-        dest_combo->addItem("Other...", "__other__");
+        // Add grid folders
         QStringList grid_folders = get_destination_folders();
         for (const QString& fp : grid_folders) {
             QString label = QFileInfo(fp).fileName();
-            if (!QDir(fp).exists()) label += " [NEW]";
+            if (!QDir(fp).exists()) label += " [virtual]";
             dest_combo->addItem(label, fp);
         }
         // Set current destination
@@ -1294,24 +1292,14 @@ void StandaloneFileTinderDialog::show_review_summary() {
             if (idx_found >= 0) {
                 dest_combo->setCurrentIndex(idx_found);
             } else {
-                // Not in grid — add it as an entry
-                dest_combo->addItem(QFileInfo(file.destination_folder).fileName(), file.destination_folder);
+                // Not in grid — add it
+                QString label = QFileInfo(file.destination_folder).fileName();
+                if (!QDir(file.destination_folder).exists()) label += " [virtual]";
+                dest_combo->addItem(label, file.destination_folder);
                 dest_combo->setCurrentIndex(dest_combo->count() - 1);
             }
         }
-        dest_combo->setToolTip(file.destination_folder);
-        // Handle "Other..." selection
-        connect(dest_combo, QOverload<int>::of(&QComboBox::activated), this, [this, dest_combo](int idx) {
-            if (dest_combo->itemData(idx).toString() == "__other__") {
-                QString folder = QFileDialog::getExistingDirectory(this, "Choose Destination", source_folder_);
-                if (!folder.isEmpty()) {
-                    dest_combo->addItem(QFileInfo(folder).fileName(), folder);
-                    dest_combo->setCurrentIndex(dest_combo->count() - 1);
-                } else {
-                    dest_combo->setCurrentIndex(0);  // back to "(none)"
-                }
-            }
-        });
+        dest_combo->setToolTip("Type a folder path or select from dropdown. Relative paths are under the source folder.");
         table->setCellWidget(visible_row, 2, dest_combo);
         
         // Mode column: moves with destinations from Advanced/AI modes; others from current mode
@@ -1399,7 +1387,16 @@ void StandaloneFileTinderDialog::show_review_summary() {
             QString new_dest;
             if (dest_combo) {
                 new_dest = dest_combo->currentData().toString();
-                if (new_dest == "__other__") new_dest.clear();
+                // If user typed a custom path (editable combo), use text
+                if (new_dest.isEmpty() && dest_combo->currentText() != "(none)") {
+                    QString typed = dest_combo->currentText().trimmed();
+                    if (!typed.isEmpty()) {
+                        if (!typed.startsWith("/")) {
+                            typed = source_folder_ + "/" + typed;
+                        }
+                        new_dest = typed;
+                    }
+                }
             }
             
             if (new_decision != file.decision || new_dest != file.destination_folder) {
@@ -1407,10 +1404,10 @@ void StandaloneFileTinderDialog::show_review_summary() {
                 if (new_decision != "pending") {
                     update_decision_count(new_decision, 1);
                 }
-                // If decision is "move" and has a destination, set it
-                if (new_decision == "move" && !new_dest.isEmpty()) {
+                // If decision is "move" or "copy" and has a destination, set it
+                if ((new_decision == "move" || new_decision == "copy") && !new_dest.isEmpty()) {
                     file.destination_folder = new_dest;
-                } else if (new_decision != "move") {
+                } else if (new_decision != "move" && new_decision != "copy") {
                     file.destination_folder.clear();
                 }
                 file.decision = new_decision;
@@ -1433,11 +1430,15 @@ void StandaloneFileTinderDialog::execute_decisions() {
     // Collect unique destination folders from move decisions
     QSet<QString> dest_folders;
     
+    std::vector<std::pair<QString, QString>> files_to_copy;
     for (const auto& file : files_) {
         if (file.decision == "delete") {
             plan.files_to_delete.push_back(file.path);
         } else if (file.decision == "move" && !file.destination_folder.isEmpty()) {
             plan.files_to_move.push_back({file.path, file.destination_folder});
+            dest_folders.insert(file.destination_folder);
+        } else if (file.decision == "copy" && !file.destination_folder.isEmpty()) {
+            files_to_copy.push_back({file.path, file.destination_folder});
             dest_folders.insert(file.destination_folder);
         }
     }
@@ -1464,6 +1465,15 @@ void StandaloneFileTinderDialog::execute_decisions() {
     }
     // Clear the create list since we handled it above
     plan.folders_to_create.clear();
+    
+    // Execute copy operations
+    for (const auto& [src, dest_folder] : files_to_copy) {
+        if (failed_folders.contains(dest_folder)) continue;
+        QString dest_path = dest_folder + "/" + QFileInfo(src).fileName();
+        if (!QFile::copy(src, dest_path)) {
+            LOG_WARN("Execute", QString("Failed to copy: %1 -> %2").arg(src, dest_path));
+        }
+    }
     
     // Remove moves targeting failed folders
     if (!failed_folders.isEmpty()) {

@@ -28,16 +28,13 @@
 #include <QScrollBar>
 #include <QMenu>
 #include <QProgressBar>
+#include <QListView>
 
-// Maximum number of new folders the AI can create in one run
-static const int kMaxAiGeneratedFolders = 30;
 // Batch size for API calls
 static const int kBatchSize = 50;
 // Timeout for API requests (ms) — higher for local LLMs
 static const int kCloudTimeoutMs = 60000;
 static const int kLocalTimeoutMs = 120000;
-// Custom role to tag AI-injected quick access items
-static const int kAiSuggestionRole = Qt::UserRole + 100;
 
 // ============================================================
 // AiSetupDialog
@@ -331,17 +328,38 @@ void AiSetupDialog::update_cost_estimate() {
                    || model.contains("free", Qt::CaseInsensitive)
                    || model.contains(":free");
     if (is_local || is_free) {
-        cost_label_->setText("");
+        cost_label_->setText("Free (local/free-tier model)");
+        cost_label_->setStyleSheet("color: #2ecc71; font-size: 11px;");
         return;
     }
-    // Rough cost estimate based on GPT-4o-mini pricing (~$0.15/1M input, ~$0.60/1M output)
-    // Actual costs vary by provider and model; this is an approximate indicator
+    
+    // Model-specific pricing ($/1M tokens) [input, output]
+    double input_price = 0.15, output_price = 0.60;  // Default: GPT-4o-mini tier
+    if (model.contains("gpt-4o-mini")) { input_price = 0.15; output_price = 0.60; }
+    else if (model.contains("gpt-4o")) { input_price = 2.50; output_price = 10.0; }
+    else if (model.contains("gpt-4-turbo")) { input_price = 10.0; output_price = 30.0; }
+    else if (model.contains("gpt-3.5")) { input_price = 0.50; output_price = 1.50; }
+    else if (model.contains("claude-3-haiku")) { input_price = 0.25; output_price = 1.25; }
+    else if (model.contains("claude-3-sonnet") || model.contains("claude-3.5-sonnet")) { input_price = 3.0; output_price = 15.0; }
+    else if (model.contains("claude-3-opus")) { input_price = 15.0; output_price = 75.0; }
+    else if (model.contains("gemini-1.5-flash")) { input_price = 0.075; output_price = 0.30; }
+    else if (model.contains("gemini-1.5-pro")) { input_price = 1.25; output_price = 5.0; }
+    else if (model.contains("mistral-small")) { input_price = 0.20; output_price = 0.60; }
+    else if (model.contains("mistral-large")) { input_price = 2.0; output_price = 6.0; }
+
     int batches = (file_count_ + kBatchSize - 1) / kBatchSize;
     double input_tokens = file_count_ * 200.0 + batches * 500.0;
     double output_tokens = file_count_ * 80.0;
-    double cost = (input_tokens * 0.15 + output_tokens * 0.60) / 1000000.0;
-    cost_label_->setText(QString("Cost estimate: ~$%1 for %2 files (%3)")
-        .arg(cost, 0, 'f', 3).arg(file_count_).arg(model_combo_->currentText()));
+    double cost = (input_tokens * input_price + output_tokens * output_price) / 1000000.0;
+    
+    cost_label_->setStyleSheet("color: #f39c12; font-size: 11px;");
+    if (cost < 0.01) {
+        cost_label_->setText(QString("Estimated cost: < $0.01 for %1 files (%2)")
+            .arg(file_count_).arg(model));
+    } else {
+        cost_label_->setText(QString("Estimated cost: ~$%1 for %2 files (%3)")
+            .arg(cost, 0, 'f', 3).arg(file_count_).arg(model));
+    }
 }
 
 int AiSetupDialog::default_rate_limit(const QString& provider) const {
@@ -379,12 +397,14 @@ void AiSetupDialog::fetch_models(const QString& provider) {
         models_url = base.toString();
     } else if (provider == "OpenRouter") {
         models_url = "https://openrouter.ai/api/v1/models";
-    } else if (provider == "Anthropic" || provider == "Google Gemini") {
-        // These don't have a standard list-models endpoint accessible this way
-        QMessageBox::information(this, "Fetch Models",
-            "This provider does not support model listing via API.\n"
-            "The dropdown contains common models; you can type any model name.");
-        return;
+    } else if (provider == "Anthropic") {
+        models_url = "https://api.anthropic.com/v1/models";
+    } else if (provider == "Google Gemini") {
+        if (api_key.isEmpty()) {
+            QMessageBox::warning(this, "Fetch Models", "API key is required for Google Gemini model listing.");
+            return;
+        }
+        models_url = QString("https://generativelanguage.googleapis.com/v1beta/models?key=%1").arg(api_key);
     } else {
         // Custom/unknown: try OpenAI-compatible
         QUrl base(endpoint);
@@ -400,7 +420,12 @@ void AiSetupDialog::fetch_models(const QString& provider) {
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setTransferTimeout(10000);
     if (!is_local && !api_key.isEmpty()) {
-        request.setRawHeader("Authorization", QByteArray("Bearer ") + api_key.toUtf8());
+        if (provider == "Anthropic") {
+            request.setRawHeader("x-api-key", api_key.toUtf8());
+            request.setRawHeader("anthropic-version", "2023-06-01");
+        } else if (provider != "Google Gemini") {
+            request.setRawHeader("Authorization", QByteArray("Bearer ") + api_key.toUtf8());
+        }
     }
 
     model_combo_->setEnabled(false);
@@ -426,8 +451,16 @@ void AiSetupDialog::fetch_models(const QString& provider) {
             for (const QJsonValue& v : arr) {
                 models.append(v.toObject()["name"].toString());
             }
+        } else if (provider == "Google Gemini") {
+            // Gemini returns {"models": [{"name": "models/gemini-1.5-flash", ...}]}
+            QJsonArray arr = doc.object()["models"].toArray();
+            for (const QJsonValue& v : arr) {
+                QString name = v.toObject()["name"].toString();
+                if (name.startsWith("models/")) name = name.mid(7);
+                models.append(name);
+            }
         } else {
-            // OpenAI-compatible: {"data": [{"id": "gpt-4o-mini", ...}]}
+            // OpenAI-compatible / Anthropic: {"data": [{"id": "...", ...}]}
             QJsonArray arr = doc.object()["data"].toArray();
             for (const QJsonValue& v : arr) {
                 models.append(v.toObject()["id"].toString());
@@ -584,6 +617,42 @@ void AiFileTinderDialog::initialize() {
                 }
             }
         }
+
+        // Create separate "AI Suggestions" panel below the grid
+        ai_suggestions_panel_ = new QWidget();
+        ai_suggestions_panel_->setVisible(false);
+        auto* ai_sugg_layout = new QHBoxLayout(ai_suggestions_panel_);
+        ai_sugg_layout->setContentsMargins(0, 0, 0, 0);
+        auto* ai_sugg_label = new QLabel("AI Suggestions:");
+        ai_sugg_label->setStyleSheet("font-weight: bold; color: #3498db;");
+        ai_sugg_layout->addWidget(ai_sugg_label);
+
+        ai_suggestions_list_ = new QListWidget();
+        ai_suggestions_list_->setFlow(QListView::LeftToRight);
+        ai_suggestions_list_->setMaximumHeight(40);
+        ai_suggestions_list_->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        ai_suggestions_list_->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        ai_suggestions_list_->setStyleSheet(
+            "QListWidget { background: transparent; border: none; }"
+            "QListWidget::item { padding: 4px 10px; background: #1a3a5c; border-radius: 3px; "
+            "margin-right: 4px; color: #3498db; font-weight: bold; }"
+            "QListWidget::item:hover { background: #1e4a6e; }"
+            "QListWidget::item:selected { background: #2980b9; color: white; }"
+        );
+        connect(ai_suggestions_list_, &QListWidget::itemClicked, this, [this](QListWidgetItem* item) {
+            QString folder_path = item->data(Qt::UserRole).toString();
+            if (!folder_path.isEmpty()) {
+                on_folder_clicked_from_ai(folder_path);
+            }
+        });
+        ai_sugg_layout->addWidget(ai_suggestions_list_, 1);
+
+        // Insert after the mind map / before the quick access panel
+        if (main_layout->count() > 2) {
+            main_layout->insertWidget(main_layout->count() - 2, ai_suggestions_panel_);
+        } else {
+            main_layout->addWidget(ai_suggestions_panel_);
+        }
     }
 }
 
@@ -605,6 +674,19 @@ bool AiFileTinderDialog::show_ai_setup() {
     category_depth_ = setup.category_depth();
     folder_purpose_ = setup.folder_purpose();
     provider_config_ = setup.provider_config();
+
+    // Validate: KeepExisting with empty grid is incompatible
+    QStringList existing = folder_model_ ? folder_model_->get_all_folder_paths() : QStringList();
+    if (category_mode_ == AiCategoryMode::KeepExisting && existing.isEmpty()) {
+        QMessageBox::warning(this, "No Folders",
+            "\"Keep existing categories\" requires at least one folder in the grid.\n"
+            "Switching to \"Generate new categories\" automatically.");
+        category_mode_ = AiCategoryMode::GenerateNew;
+    }
+    // SynthesizeNew with empty grid falls back to GenerateNew
+    if (category_mode_ == AiCategoryMode::SynthesizeNew && existing.isEmpty()) {
+        category_mode_ = AiCategoryMode::GenerateNew;
+    }
 
     // Detect free-tier usage for smart rate handling
     is_free_tier_ = provider_config_.model_name.contains("free", Qt::CaseInsensitive)
@@ -886,16 +968,55 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
             }
         }
 
-        // Cap new folders
-        if (new_folders.size() > kMaxAiGeneratedFolders) {
-            log(QString("AI suggested %1 new folders (capped at %2)")
-                .arg(new_folders.size()).arg(kMaxAiGeneratedFolders));
-            QStringList sorted_list = new_folders.values();
-            sorted_list.sort();
-            new_folders.clear();
-            for (int i = 0; i < kMaxAiGeneratedFolders && i < sorted_list.size(); ++i) {
-                new_folders.insert(sorted_list[i]);
+        // Let user review proposed categories before applying
+        if (!new_folders.isEmpty()) {
+            QDialog review_dlg(this);
+            review_dlg.setWindowTitle("Review AI Categories");
+            review_dlg.setMinimumSize(ui::scaling::scaled(500), ui::scaling::scaled(400));
+            auto* rv_layout = new QVBoxLayout(&review_dlg);
+
+            auto* rv_header = new QLabel(QString("AI proposed %1 new folder(s). Edit, remove, or add categories:")
+                .arg(new_folders.size()));
+            rv_header->setStyleSheet("font-weight: bold; color: #3498db;");
+            rv_header->setWordWrap(true);
+            rv_layout->addWidget(rv_header);
+
+            auto* folder_edit = new QTextEdit();
+            QStringList sorted_folders = new_folders.values();
+            sorted_folders.sort();
+            folder_edit->setPlainText(sorted_folders.join("\n"));
+            folder_edit->setStyleSheet("QTextEdit { background: #1a1a2e; color: #e0e0e0; font-family: monospace; font-size: 11px; }");
+            rv_layout->addWidget(folder_edit, 1);
+
+            auto* rv_note = new QLabel("One folder path per line. Empty lines will be ignored.");
+            rv_note->setStyleSheet("color: #95a5a6; font-size: 10px;");
+            rv_layout->addWidget(rv_note);
+
+            auto* rv_btns = new QHBoxLayout();
+            auto* rv_cancel = new QPushButton("Cancel (use as-is)");
+            connect(rv_cancel, &QPushButton::clicked, &review_dlg, &QDialog::reject);
+            rv_btns->addWidget(rv_cancel);
+            rv_btns->addStretch();
+            auto* rv_ok = new QPushButton("Apply Changes");
+            rv_ok->setStyleSheet("QPushButton { background-color: #3498db; color: white; padding: 6px 16px; border-radius: 4px; }");
+            connect(rv_ok, &QPushButton::clicked, &review_dlg, &QDialog::accept);
+            rv_btns->addWidget(rv_ok);
+            rv_layout->addLayout(rv_btns);
+
+            if (review_dlg.exec() == QDialog::Accepted) {
+                new_folders.clear();
+                QStringList lines = folder_edit->toPlainText().split('\n', Qt::SkipEmptyParts);
+                for (const QString& line : lines) {
+                    QString trimmed = line.trimmed();
+                    if (!trimmed.isEmpty() && trimmed != source_folder_) {
+                        if (!trimmed.startsWith(source_folder_)) {
+                            trimmed = source_folder_ + "/" + trimmed;
+                        }
+                        new_folders.insert(trimmed);
+                    }
+                }
             }
+            log(QString("Categories after review: %1 folder(s)").arg(new_folders.size()));
         }
 
         if (folder_model_ && !new_folders.isEmpty()) {
@@ -944,18 +1065,18 @@ QString AiFileTinderDialog::build_analysis_prompt(const QStringList& file_descri
         case AiCategoryMode::GenerateNew:
             prompt += "IGNORE the existing folders. Create entirely new category folders under the source folder. ";
             prompt += QString("Maximum subcategory depth: %1 levels. ").arg(category_depth_);
-            prompt += QString("Maximum %1 total new folders.\n").arg(kMaxAiGeneratedFolders);
+            prompt += "Create as many categories as needed for accurate organization.\n";
             break;
         case AiCategoryMode::SynthesizeNew:
             prompt += "Look at the existing folders to understand the user's organizational intent, ";
             prompt += "then create improved categories that blend that intent with fresh analysis. ";
             prompt += QString("Maximum subcategory depth: %1 levels. ").arg(category_depth_);
-            prompt += QString("Maximum %1 total new folders.\n").arg(kMaxAiGeneratedFolders);
+            prompt += "Create as many categories as needed for accurate organization.\n";
             break;
         case AiCategoryMode::KeepPlusGenerate:
             prompt += "Keep ALL existing folders AND add new ones as needed. ";
             prompt += QString("Maximum subcategory depth: %1 levels. ").arg(category_depth_);
-            prompt += QString("Maximum %1 total new folders.\n").arg(kMaxAiGeneratedFolders);
+            prompt += "Create as many categories as needed for accurate organization.\n";
             break;
     }
 
@@ -974,7 +1095,8 @@ QString AiFileTinderDialog::build_analysis_prompt(const QStringList& file_descri
 
     prompt += QString("\nFor each file, suggest the top %1 best-matching folder(s), ordered by confidence.\n")
         .arg(suggestion_count);
-    prompt += "New folder paths MUST be under the source folder root.\n\n";
+    prompt += "New folder paths MUST be under the source folder root.\n";
+    prompt += "IMPORTANT: Use spaces in folder names, not underscores or camelCase. Example: 'Audio Plugins' not 'Audio_Plugins'.\n\n";
 
     prompt += "Files (format: index|name|extension|size_bytes|mime_type):\n";
     for (const QString& desc : file_descriptions) {
@@ -1270,12 +1392,14 @@ void AiFileTinderDialog::apply_auto_suggestions() {
     update_stats();
     LOG_INFO("AIMode", "Auto mode complete \xe2\x80\x94 showing review screen");
 
+    update_progress();
     show_review_summary();
 }
 
 void AiFileTinderDialog::apply_semi_suggestions() {
     LOG_INFO("AIMode", QString("Semi mode \xe2\x80\x94 %1 suggestions ready").arg(suggestions_.size()));
     current_filtered_index_ = 0;
+    update_progress();
     show_current_file();
 }
 
@@ -1305,37 +1429,52 @@ void AiFileTinderDialog::highlight_suggested_folders(const QStringList& folders)
         mind_map_view_->set_selected_folder(folders.first());
     }
 
-    // Add AI suggestions to quick access temporarily (insert in reverse to maintain rank order)
-    if (quick_access_list_) {
-        for (int i = folders.size() - 1; i >= 0; --i) {
+    // Populate the AI Suggestions panel (separate from Quick Access)
+    if (ai_suggestions_list_) {
+        ai_suggestions_list_->clear();
+        for (int i = 0; i < folders.size(); ++i) {
             QString path = folders[i];
             QString name = QFileInfo(path).fileName();
-            if (name.length() > 12) name = name.left(11) + "\xe2\x80\xa6";
-            QString label = QString("AI %1: %2").arg(i + 1).arg(name);
+            if (name.length() > 18) name = name.left(17) + QString::fromUtf8("\xe2\x80\xa6");
+            QString label = QString("%1. %2").arg(i + 1).arg(name);
 
             auto* item = new QListWidgetItem(label);
             item->setData(Qt::UserRole, path);
-            item->setData(kAiSuggestionRole, true);  // Tag as AI suggestion
-            item->setToolTip(QString("AI suggestion: %1").arg(path));
-            item->setSizeHint(QSize(ui::scaling::scaled(120), ui::scaling::scaled(28)));
-            item->setBackground(QColor("#1a3a5c"));
-            item->setForeground(QColor("#3498db"));
-            quick_access_list_->insertItem(0, item);
+            item->setToolTip(path);
+            item->setSizeHint(QSize(ui::scaling::scaled(140), ui::scaling::scaled(28)));
+            ai_suggestions_list_->addItem(item);
         }
+        if (ai_suggestions_panel_) ai_suggestions_panel_->setVisible(!folders.isEmpty());
     }
 }
 
 void AiFileTinderDialog::clear_folder_highlights() {
     highlighted_folders_.clear();
-
-    if (quick_access_list_) {
-        for (int i = quick_access_list_->count() - 1; i >= 0; --i) {
-            auto* item = quick_access_list_->item(i);
-            if (item && item->data(kAiSuggestionRole).toBool()) {
-                delete quick_access_list_->takeItem(i);
-            }
-        }
+    if (ai_suggestions_list_) {
+        ai_suggestions_list_->clear();
     }
+    if (ai_suggestions_panel_) {
+        ai_suggestions_panel_->setVisible(false);
+    }
+}
+
+void AiFileTinderDialog::on_folder_clicked_from_ai(const QString& folder_path) {
+    int file_idx = get_current_file_index();
+    if (file_idx < 0 || file_idx >= static_cast<int>(files_.size())) return;
+
+    auto& file = files_[file_idx];
+    QString old_decision = file.decision;
+    record_action(file_idx, old_decision, "move", folder_path);
+    update_decision_count(old_decision, -1);
+
+    file.decision = "move";
+    file.destination_folder = folder_path;
+    move_count_++;
+
+    if (folder_model_) folder_model_->assign_file_to_folder(folder_path);
+    update_stats();
+    save_session_state();
+    advance_to_next();
 }
 
 bool AiFileTinderDialog::check_rate_limit() {

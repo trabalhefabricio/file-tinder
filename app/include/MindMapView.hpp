@@ -22,6 +22,7 @@ public:
     FolderNode* node() const { return node_; }
     void set_selected(bool selected);
     void update_display();
+    void set_show_full_path(bool show) { show_full_path_ = show; update_display(); }
     
 signals:
     void folder_clicked(const QString& path);
@@ -37,6 +38,7 @@ private:
     FolderNode* node_;
     bool is_selected_;
     QPoint drag_start_pos_;
+    bool show_full_path_ = false;
     
     void update_style();
 };
@@ -81,6 +83,8 @@ private:
     int next_col_;
     int max_rows_per_col_ = 6;  // Configurable items per column before wrapping
     bool compact_mode_ = true;  // Compact (small) vs expanded (wider) folder buttons
+    bool show_full_paths_ = false;
+    int custom_width_ = 0;  // 0 = use compact/expanded defaults
     
     void build_grid();
     void place_folder_node(FolderNode* node);
@@ -90,6 +94,10 @@ public:
     int max_rows_per_col() const { return max_rows_per_col_; }
     void set_compact_mode(bool compact) { compact_mode_ = compact; }
     bool compact_mode() const { return compact_mode_; }
+    void set_show_full_paths(bool show) { show_full_paths_ = show; }
+    bool show_full_paths() const { return show_full_paths_; }
+    void set_custom_width(int w) { custom_width_ = w; }
+    int custom_width() const { return custom_width_; }
 };
 
 #endif // MIND_MAP_VIEW_HPP

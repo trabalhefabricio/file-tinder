@@ -133,6 +133,9 @@ private:
     int consecutive_429s_ = 0;
     qint64 last_request_ms_ = 0;
 
+    QWidget* ai_suggestions_panel_ = nullptr;
+    QListWidget* ai_suggestions_list_ = nullptr;
+
     // Show AI setup dialog; returns false if user cancelled
     bool show_ai_setup();
 
@@ -158,6 +161,7 @@ private:
     // Highlight specific folders in the mind map and quick access
     void highlight_suggested_folders(const QStringList& folders);
     void clear_folder_highlights();
+    void on_folder_clicked_from_ai(const QString& folder_path);
 
     // Rate limiting
     bool check_rate_limit();

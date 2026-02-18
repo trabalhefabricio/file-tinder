@@ -230,6 +230,35 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     });
     grid_toolbar->addWidget(compact_btn);
     
+    auto* fullpath_btn = new QPushButton("Full Paths");
+    fullpath_btn->setMaximumWidth(75);
+    fullpath_btn->setCheckable(true);
+    fullpath_btn->setChecked(false);
+    fullpath_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    fullpath_btn->setToolTip("Show full folder path structure in button names");
+    connect(fullpath_btn, &QPushButton::toggled, this, [this](bool checked) {
+        if (mind_map_view_) {
+            mind_map_view_->set_show_full_paths(checked);
+            mind_map_view_->refresh_layout();
+        }
+    });
+    grid_toolbar->addWidget(fullpath_btn);
+
+    grid_toolbar->addWidget(new QLabel("Width:"));
+    auto* width_spin = new QSpinBox();
+    width_spin->setRange(80, 300);
+    width_spin->setValue(120);
+    width_spin->setSingleStep(10);
+    width_spin->setMaximumWidth(60);
+    width_spin->setToolTip("Custom folder button width in pixels");
+    connect(width_spin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
+        if (mind_map_view_) {
+            mind_map_view_->set_custom_width(val);
+            mind_map_view_->refresh_layout();
+        }
+    });
+    grid_toolbar->addWidget(width_spin);
+    
     grid_toolbar->addStretch();
     
     auto* save_cfg_btn = new QPushButton("Save Grid");
@@ -1162,6 +1191,17 @@ void AdvancedFileTinderDialog::save_grid_config() {
     if (!ok || name.isEmpty()) return;
     
     QStringList paths = folder_model_->get_all_folder_paths();
+    
+    // Append display settings as metadata entries (prefixed with __meta__)
+    bool compact = mind_map_view_ ? mind_map_view_->compact_mode() : true;
+    int rows = mind_map_view_ ? mind_map_view_->max_rows_per_col() : 6;
+    int custom_w = mind_map_view_ ? mind_map_view_->custom_width() : 0;
+    bool full_paths = mind_map_view_ ? mind_map_view_->show_full_paths() : false;
+    paths.append(QString("__meta__compact=%1").arg(compact ? 1 : 0));
+    paths.append(QString("__meta__rows=%1").arg(rows));
+    paths.append(QString("__meta__width=%1").arg(custom_w));
+    paths.append(QString("__meta__fullpaths=%1").arg(full_paths ? 1 : 0));
+    
     db_.save_grid_config(source_folder_, name, paths);
     QMessageBox::information(this, "Saved", QString("Grid configuration '%1' saved with %2 folder(s).")
         .arg(name).arg(paths.size()));
@@ -1182,6 +1222,25 @@ void AdvancedFileTinderDialog::load_grid_config() {
     QStringList paths = db_.get_grid_config(source_folder_, name);
     if (paths.isEmpty()) return;
     
+    // Extract display metadata from config
+    bool has_meta = false;
+    bool meta_compact = true;
+    int meta_rows = 6;
+    int meta_width = 0;
+    bool meta_fullpaths = false;
+    QStringList folder_paths;
+    for (const QString& p : paths) {
+        if (p.startsWith("__meta__")) {
+            has_meta = true;
+            if (p.startsWith("__meta__compact=")) meta_compact = p.mid(16).toInt();
+            else if (p.startsWith("__meta__rows=")) meta_rows = p.mid(13).toInt();
+            else if (p.startsWith("__meta__width=")) meta_width = p.mid(14).toInt();
+            else if (p.startsWith("__meta__fullpaths=")) meta_fullpaths = p.mid(18).toInt();
+        } else {
+            folder_paths.append(p);
+        }
+    }
+    
     // Clear current tree (except root) — remove in reverse order so
     // children are removed before their parents (avoid double-free)
     if (folder_model_) {
@@ -1191,11 +1250,18 @@ void AdvancedFileTinderDialog::load_grid_config() {
             folder_model_->remove_folder(current[i]);
         }
         // Add folders from config
-        for (const QString& p : paths) {
+        for (const QString& p : folder_paths) {
             bool is_virtual = !QDir(p).exists();
             folder_model_->add_folder(p, is_virtual);
         }
         folder_model_->blockSignals(false);
+    }
+    // Apply display settings
+    if (has_meta && mind_map_view_) {
+        mind_map_view_->set_compact_mode(meta_compact);
+        mind_map_view_->set_max_rows_per_col(meta_rows);
+        mind_map_view_->set_custom_width(meta_width);
+        mind_map_view_->set_show_full_paths(meta_fullpaths);
     }
     if (mind_map_view_) mind_map_view_->refresh_layout();
 }
