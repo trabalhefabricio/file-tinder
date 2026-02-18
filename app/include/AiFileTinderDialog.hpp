@@ -73,6 +73,8 @@ private:
     void load_saved_provider();
     void save_provider_config();
     void update_cost_estimate();
+    void fetch_models(const QString& provider);
+    int default_rate_limit(const QString& provider) const;
 
     DatabaseManager& db_;
     QString session_folder_;
@@ -82,8 +84,7 @@ private:
     QComboBox* provider_combo_;
     QLineEdit* api_key_edit_;
     QLineEdit* endpoint_edit_;
-    QLineEdit* model_edit_;
-    QSpinBox* rate_limit_spin_;
+    QComboBox* model_combo_;
     QRadioButton* auto_radio_;
     QRadioButton* semi_radio_;
     QSpinBox* semi_count_spin_;
@@ -91,6 +92,7 @@ private:
     QSpinBox* depth_spin_;
     QTextEdit* purpose_edit_;
     QLabel* cost_label_;
+    QNetworkAccessManager* fetch_nam_;
 };
 
 // ── AiFileTinderDialog ─────────────────────────────────────
@@ -119,12 +121,17 @@ private:
     std::vector<AiFileSuggestion> suggestions_;
 
     QStringList highlighted_folders_;
+    QPushButton* ai_setup_btn_ = nullptr;
     QPushButton* rerun_ai_btn_ = nullptr;
 
     // Network
     QNetworkAccessManager* network_manager_;
     QTimer* rate_limit_timer_;
     int requests_this_minute_;
+    bool ai_configured_ = false;
+    bool is_free_tier_ = false;
+    int consecutive_429s_ = 0;
+    qint64 last_request_ms_ = 0;
 
     // Show AI setup dialog; returns false if user cancelled
     bool show_ai_setup();

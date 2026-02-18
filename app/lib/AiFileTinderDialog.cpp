@@ -52,20 +52,21 @@ AiSetupDialog::AiSetupDialog(const QStringList& existing_folders,
     , db_(db)
     , session_folder_(session_folder)
     , existing_folders_(existing_folders)
-    , file_count_(file_count) {
+    , file_count_(file_count)
+    , fetch_nam_(new QNetworkAccessManager(this)) {
     setWindowTitle("AI Sorting Setup");
-    setMinimumSize(ui::scaling::scaled(520), ui::scaling::scaled(580));
+    setMinimumSize(ui::scaling::scaled(480), ui::scaling::scaled(420));
     build_ui();
     load_saved_provider();
 }
 
 void AiSetupDialog::build_ui() {
     auto* main_layout = new QVBoxLayout(this);
-    main_layout->setSpacing(10);
-    main_layout->setContentsMargins(18, 18, 18, 18);
+    main_layout->setSpacing(8);
+    main_layout->setContentsMargins(14, 14, 14, 14);
 
-    auto* header = new QLabel("\xF0\x9F\xA4\x96 AI Sorting Configuration");
-    header->setStyleSheet("font-size: 18px; font-weight: bold; color: #3498db;");
+    auto* header = new QLabel("AI Sorting Configuration");
+    header->setStyleSheet("font-size: 16px; font-weight: bold; color: #3498db;");
     header->setAlignment(Qt::AlignCenter);
     main_layout->addWidget(header);
 
@@ -73,6 +74,7 @@ void AiSetupDialog::build_ui() {
     auto* prov_group = new QGroupBox("AI Provider");
     prov_group->setStyleSheet("QGroupBox { font-weight: bold; }");
     auto* prov_layout = new QVBoxLayout(prov_group);
+    prov_layout->setSpacing(4);
 
     auto* prov_row = new QHBoxLayout();
     prov_row->addWidget(new QLabel("Provider:"));
@@ -97,7 +99,7 @@ void AiSetupDialog::build_ui() {
     key_row->addWidget(api_key_edit_, 1);
     prov_layout->addLayout(key_row);
 
-    auto* key_warning = new QLabel("\xe2\x9a\xa0\xef\xb8\x8f API keys are stored locally in plaintext. "
+    auto* key_warning = new QLabel("Note: API keys are stored locally in plaintext. "
         "Do not use on shared or untrusted machines.");
     key_warning->setStyleSheet("color: #e67e22; font-size: 9px;");
     key_warning->setWordWrap(true);
@@ -112,23 +114,23 @@ void AiSetupDialog::build_ui() {
 
     auto* model_row = new QHBoxLayout();
     model_row->addWidget(new QLabel("Model:"));
-    model_edit_ = new QLineEdit();
-    model_edit_->setPlaceholderText("gpt-4o-mini");
-    model_row->addWidget(model_edit_, 1);
+    model_combo_ = new QComboBox();
+    model_combo_->setEditable(true);
+    model_combo_->setInsertPolicy(QComboBox::NoInsert);
+    model_combo_->setPlaceholderText("Select or type a model name");
+    model_row->addWidget(model_combo_, 1);
+    auto* fetch_btn = new QPushButton("Fetch");
+    fetch_btn->setFixedWidth(ui::scaling::scaled(60));
+    fetch_btn->setToolTip("Fetch available models from the provider API");
+    fetch_btn->setStyleSheet("QPushButton { padding: 3px 8px; }");
+    connect(fetch_btn, &QPushButton::clicked, this, [this]() {
+        fetch_models(provider_combo_->currentText());
+    });
+    model_row->addWidget(fetch_btn);
     prov_layout->addLayout(model_row);
 
     // Recalculate cost when model name changes (free models suppress warning)
-    connect(model_edit_, &QLineEdit::textChanged, this, [this]() { update_cost_estimate(); });
-
-    auto* rate_row = new QHBoxLayout();
-    rate_row->addWidget(new QLabel("Rate limit (req/min):"));
-    rate_limit_spin_ = new QSpinBox();
-    rate_limit_spin_->setRange(1, 10000);
-    rate_limit_spin_->setValue(60);
-    rate_limit_spin_->setToolTip("Max API requests per minute");
-    rate_row->addWidget(rate_limit_spin_);
-    rate_row->addStretch();
-    prov_layout->addLayout(rate_row);
+    connect(model_combo_, &QComboBox::currentTextChanged, this, [this]() { update_cost_estimate(); });
 
     // Provider preset auto-fill
     connect(provider_combo_, &QComboBox::currentTextChanged, this, [this](const QString& text) {
@@ -138,44 +140,44 @@ void AiSetupDialog::build_ui() {
         if (db_.get_ai_provider(text, api_key, endpoint, model, is_local, rpm)) {
             api_key_edit_->setText(api_key);
             endpoint_edit_->setText(endpoint);
-            model_edit_->setText(model);
-            rate_limit_spin_->setValue(rpm);
+            model_combo_->setCurrentText(model);
             update_cost_estimate();
             return;
         }
+        model_combo_->clear();
         if (text == "OpenAI") {
             endpoint_edit_->setText("https://api.openai.com/v1/chat/completions");
-            model_edit_->setText("gpt-4o-mini");
-            rate_limit_spin_->setValue(60);
+            model_combo_->addItems({"gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"});
+            model_combo_->setCurrentText("gpt-4o-mini");
         } else if (text == "Anthropic") {
             endpoint_edit_->setText("https://api.anthropic.com/v1/messages");
-            model_edit_->setText("claude-3-haiku-20240307");
-            rate_limit_spin_->setValue(50);
+            model_combo_->addItems({"claude-3-haiku-20240307", "claude-3-sonnet-20240229", "claude-3-opus-20240229"});
+            model_combo_->setCurrentText("claude-3-haiku-20240307");
         } else if (text == "Google Gemini") {
             endpoint_edit_->setText("https://generativelanguage.googleapis.com/v1beta/models");
-            model_edit_->setText("gemini-1.5-flash");
-            rate_limit_spin_->setValue(60);
+            model_combo_->addItems({"gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"});
+            model_combo_->setCurrentText("gemini-1.5-flash");
         } else if (text == "Mistral") {
             endpoint_edit_->setText("https://api.mistral.ai/v1/chat/completions");
-            model_edit_->setText("mistral-small-latest");
-            rate_limit_spin_->setValue(60);
+            model_combo_->addItems({"mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"});
+            model_combo_->setCurrentText("mistral-small-latest");
         } else if (text == "Groq") {
             endpoint_edit_->setText("https://api.groq.com/openai/v1/chat/completions");
-            model_edit_->setText("llama-3.1-8b-instant");
-            rate_limit_spin_->setValue(30);
+            model_combo_->addItems({"llama-3.1-8b-instant", "llama-3.1-70b-versatile", "mixtral-8x7b-32768"});
+            model_combo_->setCurrentText("llama-3.1-8b-instant");
         } else if (text == "OpenRouter") {
             endpoint_edit_->setText("https://openrouter.ai/api/v1/chat/completions");
-            model_edit_->setText("meta-llama/llama-3.1-8b-instruct:free");
-            rate_limit_spin_->setValue(20);
+            model_combo_->addItems({"meta-llama/llama-3.1-8b-instruct:free", "google/gemma-2-9b-it:free", "mistralai/mistral-7b-instruct:free"});
+            model_combo_->setCurrentText("meta-llama/llama-3.1-8b-instruct:free");
         } else if (text.contains("Ollama")) {
             endpoint_edit_->setText("http://localhost:11434/v1/chat/completions");
-            model_edit_->setText("llama3.1");
-            rate_limit_spin_->setValue(10000);
+            model_combo_->addItems({"llama3.1", "llama3", "mistral", "gemma2"});
+            model_combo_->setCurrentText("llama3.1");
             api_key_edit_->clear();
         } else if (text.contains("LM Studio")) {
             endpoint_edit_->setText("http://localhost:1234/v1/chat/completions");
-            model_edit_->setText("local-model");
-            rate_limit_spin_->setValue(10000);
+            model_combo_->addItem("local-model");
+            model_combo_->setCurrentText("local-model");
             api_key_edit_->clear();
         }
         update_cost_estimate();
@@ -187,14 +189,15 @@ void AiSetupDialog::build_ui() {
     auto* mode_group = new QGroupBox("Sorting Mode");
     mode_group->setStyleSheet("QGroupBox { font-weight: bold; }");
     auto* mode_layout = new QVBoxLayout(mode_group);
+    mode_layout->setSpacing(4);
 
-    auto_radio_ = new QRadioButton("Auto \xe2\x80\x94 AI sorts all files, then review");
+    auto_radio_ = new QRadioButton("Auto -- AI sorts all files, then review");
     auto_radio_->setChecked(true);
     auto_radio_->setToolTip("The AI assigns every file to a folder. You review and adjust on the review screen.");
     mode_layout->addWidget(auto_radio_);
 
     auto* semi_row = new QHBoxLayout();
-    semi_radio_ = new QRadioButton("Semi \xe2\x80\x94 AI suggests");
+    semi_radio_ = new QRadioButton("Semi -- AI suggests");
     semi_radio_->setToolTip("The AI highlights the top N matching folders per file in the grid.");
     semi_row->addWidget(semi_radio_);
     semi_count_spin_ = new QSpinBox();
@@ -210,10 +213,11 @@ void AiSetupDialog::build_ui() {
 
     main_layout->addWidget(mode_group);
 
-    // ── Categories Group ──
+    // ── Categories + Depth (combined row) ──
     auto* cat_group = new QGroupBox("Category Handling");
     cat_group->setStyleSheet("QGroupBox { font-weight: bold; }");
     auto* cat_layout = new QVBoxLayout(cat_group);
+    cat_layout->setSpacing(4);
 
     category_combo_ = new QComboBox();
     category_combo_->addItem("Keep existing categories", static_cast<int>(AiCategoryMode::KeepExisting));
@@ -222,32 +226,18 @@ void AiSetupDialog::build_ui() {
     category_combo_->addItem("Keep + Generate new categories", static_cast<int>(AiCategoryMode::KeepPlusGenerate));
     cat_layout->addWidget(category_combo_);
 
-    auto* cat_help = new QLabel(
-        "<b>Keep existing:</b> AI sorts into your current folders<br>"
-        "<b>Generate new:</b> AI creates entirely new category folders<br>"
-        "<b>Synthesize:</b> AI merges your folder intent with new analysis<br>"
-        "<b>Keep + Generate:</b> Keeps current folders and adds new ones");
-    cat_help->setStyleSheet("color: #999; font-size: 10px;");
-    cat_help->setWordWrap(true);
-    cat_layout->addWidget(cat_help);
-
-    main_layout->addWidget(cat_group);
-
-    // ── Depth Group ──
-    auto* depth_group = new QGroupBox("Category Depth");
-    depth_group->setStyleSheet("QGroupBox { font-weight: bold; }");
-    auto* depth_layout = new QHBoxLayout(depth_group);
-
-    depth_layout->addWidget(new QLabel("Subcategory depth:"));
+    auto* depth_row = new QHBoxLayout();
+    depth_row->addWidget(new QLabel("Subcategory depth:"));
     depth_spin_ = new QSpinBox();
     depth_spin_->setRange(1, 3);
     depth_spin_->setValue(2);
     depth_spin_->setToolTip("1 = flat (Images/)\n2 = one sub-level (Images/Vacation/)\n3 = two sub-levels (Images/Vacation/Beach/)");
-    depth_layout->addWidget(depth_spin_);
-    depth_layout->addWidget(new QLabel("levels (1\xe2\x80\x93" "3)"));
-    depth_layout->addStretch();
+    depth_row->addWidget(depth_spin_);
+    depth_row->addWidget(new QLabel("levels"));
+    depth_row->addStretch();
+    cat_layout->addLayout(depth_row);
 
-    main_layout->addWidget(depth_group);
+    main_layout->addWidget(cat_group);
 
     // ── Purpose (optional) ──
     auto* purpose_group = new QGroupBox("What is this folder for? (optional)");
@@ -255,8 +245,8 @@ void AiSetupDialog::build_ui() {
     auto* purpose_layout = new QVBoxLayout(purpose_group);
 
     purpose_edit_ = new QTextEdit();
-    purpose_edit_->setMaximumHeight(55);
-    purpose_edit_->setPlaceholderText("e.g. 'This is my Downloads folder, I want to organize by project and file type'");
+    purpose_edit_->setMaximumHeight(45);
+    purpose_edit_->setPlaceholderText("e.g. 'This is my Downloads folder, organize by project and file type'");
     purpose_edit_->setStyleSheet("QTextEdit { background: #2d2d2d; color: #ecf0f1; border: 1px solid #4a6078; }");
     purpose_layout->addWidget(purpose_edit_);
 
@@ -280,7 +270,7 @@ void AiSetupDialog::build_ui() {
     connect(cancel_btn, &QPushButton::clicked, this, &QDialog::reject);
     btn_layout->addWidget(cancel_btn);
 
-    auto* ok_btn = new QPushButton("OK \xe2\x80\x94 Start Sorting");
+    auto* ok_btn = new QPushButton("Start Sorting");
     ok_btn->setStyleSheet(
         "QPushButton { padding: 8px 25px; background-color: #3498db; "
         "color: white; font-weight: bold; border-radius: 4px; }"
@@ -328,13 +318,13 @@ void AiSetupDialog::save_provider_config() {
                     || provider.contains("Local");
     db_.save_ai_provider(provider, api_key_edit_->text().trimmed(),
                          endpoint_edit_->text().trimmed(),
-                         model_edit_->text().trimmed(),
-                         is_local, rate_limit_spin_->value());
+                         model_combo_->currentText().trimmed(),
+                         is_local, default_rate_limit(provider));
 }
 
 void AiSetupDialog::update_cost_estimate() {
     QString provider = provider_combo_->currentText();
-    QString model = model_edit_->text();
+    QString model = model_combo_->currentText();
     bool is_local = provider.contains("Ollama") || provider.contains("LM Studio")
                     || provider.contains("Local");
     bool is_free = provider.contains("free", Qt::CaseInsensitive)
@@ -350,8 +340,115 @@ void AiSetupDialog::update_cost_estimate() {
     double input_tokens = file_count_ * 200.0 + batches * 500.0;
     double output_tokens = file_count_ * 80.0;
     double cost = (input_tokens * 0.15 + output_tokens * 0.60) / 1000000.0;
-    cost_label_->setText(QString("\xe2\x9a\xa0\xef\xb8\x8f Cost estimate: ~$%1 for %2 files (%3)")
-        .arg(cost, 0, 'f', 3).arg(file_count_).arg(model_edit_->text()));
+    cost_label_->setText(QString("Cost estimate: ~$%1 for %2 files (%3)")
+        .arg(cost, 0, 'f', 3).arg(file_count_).arg(model_combo_->currentText()));
+}
+
+int AiSetupDialog::default_rate_limit(const QString& provider) const {
+    if (provider.contains("Ollama") || provider.contains("LM Studio") || provider.contains("Local"))
+        return 10000;
+    if (provider == "OpenAI") return 500;
+    if (provider == "Anthropic") return 50;
+    if (provider == "Google Gemini") return 60;
+    if (provider == "Mistral") return 60;
+    if (provider == "Groq") return 30;
+    if (provider == "OpenRouter") return 20;
+    return 60;
+}
+
+void AiSetupDialog::fetch_models(const QString& provider) {
+    QString api_key = api_key_edit_->text().trimmed();
+    QString endpoint = endpoint_edit_->text().trimmed();
+    bool is_local = provider.contains("Ollama") || provider.contains("LM Studio")
+                    || provider.contains("Local");
+
+    // Determine the models list endpoint
+    QString models_url;
+    if (provider.contains("Ollama")) {
+        models_url = "http://localhost:11434/api/tags";
+    } else if (provider.contains("LM Studio")) {
+        models_url = "http://localhost:1234/v1/models";
+    } else if (provider == "OpenAI" || provider == "Groq" || provider == "Mistral") {
+        // OpenAI-compatible: /v1/models
+        QUrl base(endpoint);
+        QString path = base.path();
+        int chat_pos = path.indexOf("/chat/completions");
+        if (chat_pos >= 0) path = path.left(chat_pos) + "/models";
+        else path = "/v1/models";
+        base.setPath(path);
+        models_url = base.toString();
+    } else if (provider == "OpenRouter") {
+        models_url = "https://openrouter.ai/api/v1/models";
+    } else if (provider == "Anthropic" || provider == "Google Gemini") {
+        // These don't have a standard list-models endpoint accessible this way
+        QMessageBox::information(this, "Fetch Models",
+            "This provider does not support model listing via API.\n"
+            "The dropdown contains common models; you can type any model name.");
+        return;
+    } else {
+        // Custom/unknown: try OpenAI-compatible
+        QUrl base(endpoint);
+        QString path = base.path();
+        int chat_pos = path.indexOf("/chat/completions");
+        if (chat_pos >= 0) path = path.left(chat_pos) + "/models";
+        base.setPath(path);
+        models_url = base.toString();
+    }
+
+    QUrl fetch_url(models_url);
+    QNetworkRequest request(fetch_url);
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setTransferTimeout(10000);
+    if (!is_local && !api_key.isEmpty()) {
+        request.setRawHeader("Authorization", QByteArray("Bearer ") + api_key.toUtf8());
+    }
+
+    model_combo_->setEnabled(false);
+    QString current_model = model_combo_->currentText();
+
+    QNetworkReply* reply = fetch_nam_->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, current_model, provider]() {
+        model_combo_->setEnabled(true);
+        reply->deleteLater();
+
+        if (reply->error() != QNetworkReply::NoError) {
+            QMessageBox::warning(this, "Fetch Failed",
+                QString("Could not fetch models: %1").arg(reply->errorString()));
+            return;
+        }
+
+        QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        QStringList models;
+
+        if (provider.contains("Ollama")) {
+            // Ollama returns {"models": [{"name": "llama3:latest", ...}]}
+            QJsonArray arr = doc.object()["models"].toArray();
+            for (const QJsonValue& v : arr) {
+                models.append(v.toObject()["name"].toString());
+            }
+        } else {
+            // OpenAI-compatible: {"data": [{"id": "gpt-4o-mini", ...}]}
+            QJsonArray arr = doc.object()["data"].toArray();
+            for (const QJsonValue& v : arr) {
+                models.append(v.toObject()["id"].toString());
+            }
+        }
+
+        if (models.isEmpty()) {
+            QMessageBox::information(this, "No Models",
+                "No models returned by the API. You can type a model name manually.");
+            return;
+        }
+
+        models.sort();
+        model_combo_->clear();
+        model_combo_->addItems(models);
+
+        // Restore previous selection if it's still in the list
+        int idx = model_combo_->findText(current_model);
+        if (idx >= 0) model_combo_->setCurrentIndex(idx);
+        else model_combo_->setCurrentIndex(0);
+    });
 }
 
 AiSortMode AiSetupDialog::sort_mode() const {
@@ -379,10 +476,10 @@ AiProviderConfig AiSetupDialog::provider_config() const {
     cfg.provider_name = provider_combo_->currentText();
     cfg.api_key = api_key_edit_->text().trimmed();
     cfg.endpoint_url = endpoint_edit_->text().trimmed();
-    cfg.model_name = model_edit_->text().trimmed();
+    cfg.model_name = model_combo_->currentText().trimmed();
     cfg.is_local = cfg.provider_name.contains("Ollama") || cfg.provider_name.contains("LM Studio")
                    || cfg.provider_name.contains("Local");
-    cfg.rate_limit_rpm = rate_limit_spin_->value();
+    cfg.rate_limit_rpm = default_rate_limit(cfg.provider_name);
     return cfg;
 }
 
@@ -433,20 +530,42 @@ void AiFileTinderDialog::initialize() {
         });
     }
 
-    // Add "Re-run AI" button to the title bar
+    // Add AI buttons to the title bar
     if (auto* main_layout = qobject_cast<QVBoxLayout*>(layout())) {
-        rerun_ai_btn_ = new QPushButton("\xF0\x9F\xA4\x96 Re-run AI");
+        // "AI Setup" button — opens the configuration dialog
+        ai_setup_btn_ = new QPushButton("AI Setup");
+        ai_setup_btn_->setStyleSheet(
+            "QPushButton { padding: 5px 12px; background-color: #2980b9; "
+            "border-radius: 4px; color: white; font-size: 11px; }"
+            "QPushButton:hover { background-color: #3498db; }"
+        );
+        ai_setup_btn_->setToolTip("Configure AI provider, model, and sorting options");
+        connect(ai_setup_btn_, &QPushButton::clicked, this, [this]() {
+            if (show_ai_setup()) {
+                ai_configured_ = true;
+                run_ai_analysis(false);
+            }
+        });
+
+        // "Re-run AI" button
+        rerun_ai_btn_ = new QPushButton("Re-run AI");
         rerun_ai_btn_->setStyleSheet(
             "QPushButton { padding: 5px 12px; background-color: #3498db; "
             "border-radius: 4px; color: white; font-size: 11px; }"
             "QPushButton:hover { background-color: #2980b9; }"
         );
         rerun_ai_btn_->setToolTip("Re-run AI analysis on remaining unsorted files or all files");
+        rerun_ai_btn_->setEnabled(false);
         connect(rerun_ai_btn_, &QPushButton::clicked, this, [this]() {
+            if (!ai_configured_) {
+                QMessageBox::information(this, "AI Not Configured",
+                    "Please click 'AI Setup' first to configure the AI provider.");
+                return;
+            }
             auto reply = QMessageBox::question(this, "Re-run AI",
                 "Re-analyze which files?\n\n"
-                "\xe2\x80\xa2 Yes \xe2\x80\x94 Remaining unsorted files only\n"
-                "\xe2\x80\xa2 No \xe2\x80\x94 All files (overwrite existing decisions)",
+                "Yes -- Remaining unsorted files only\n"
+                "No -- All files (overwrite existing decisions)",
                 QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
                 QMessageBox::Yes);
             if (reply == QMessageBox::Cancel) return;
@@ -460,18 +579,12 @@ void AiFileTinderDialog::initialize() {
                 auto* title_bar = first_item->widget();
                 auto* title_layout = qobject_cast<QHBoxLayout*>(title_bar->layout());
                 if (title_layout) {
+                    title_layout->insertWidget(title_layout->count() - 1, ai_setup_btn_);
                     title_layout->insertWidget(title_layout->count() - 1, rerun_ai_btn_);
                 }
             }
         }
     }
-
-    if (!show_ai_setup()) {
-        QTimer::singleShot(0, this, [this]() { QDialog::reject(); });
-        return;
-    }
-
-    run_ai_analysis(false);
 }
 
 bool AiFileTinderDialog::show_ai_setup() {
@@ -492,6 +605,12 @@ bool AiFileTinderDialog::show_ai_setup() {
     category_depth_ = setup.category_depth();
     folder_purpose_ = setup.folder_purpose();
     provider_config_ = setup.provider_config();
+
+    // Detect free-tier usage for smart rate handling
+    is_free_tier_ = provider_config_.model_name.contains("free", Qt::CaseInsensitive)
+                    || provider_config_.model_name.contains(":free")
+                    || provider_config_.provider_name == "Groq";
+    consecutive_429s_ = 0;
 
     rate_limit_timer_->start();
     return true;
@@ -635,15 +754,35 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
             batch_files.append(file_descriptions[i]);
         }
 
-        // Check rate limit
+        // Smart rate limiting: enforce per-request delay and per-minute cap
         if (!check_rate_limit()) {
             int wait_secs = 60 - (elapsed.elapsed() / 1000) % 60;
             if (wait_secs <= 0) wait_secs = 5;
-            log(QString("\xe2\x9a\xa0\xef\xb8\x8f Rate limit: waiting %1s before next request...").arg(wait_secs));
+            log(QString("Rate limit reached: waiting %1s...").arg(wait_secs));
             QEventLoop wait_loop;
             QTimer::singleShot(wait_secs * 1000, &wait_loop, &QEventLoop::quit);
             wait_loop.exec();
             reset_rate_limit();
+        } else if (batch > 0) {
+            // Smart pacing: add delay between requests for free/strict APIs
+            int delay_ms = 0;
+            if (provider_config_.is_local) {
+                delay_ms = 0;
+            } else if (is_free_tier_) {
+                delay_ms = 3000 + consecutive_429s_ * 2000;  // 3s base + backoff
+            } else if (provider_config_.rate_limit_rpm <= 30) {
+                delay_ms = 2500;  // conservative for strict limits
+            } else if (provider_config_.rate_limit_rpm <= 60) {
+                delay_ms = 1200;
+            } else {
+                delay_ms = 500;   // light pacing for generous limits
+            }
+            if (delay_ms > 0) {
+                log(QString("Pacing: %1ms delay...").arg(delay_ms));
+                QEventLoop pace_loop;
+                QTimer::singleShot(delay_ms, &pace_loop, &QEventLoop::quit);
+                pace_loop.exec();
+            }
         }
 
         // Build prompt for this batch
@@ -657,7 +796,7 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
         QString response = send_api_request(prompt, error);
 
         if (!error.isEmpty()) {
-            log(QString("\xe2\x9d\x8c Batch %1/%2 failed: %3").arg(batch + 1).arg(total_batches).arg(error));
+            log(QString("ERROR: Batch %1/%2 failed: %3").arg(batch + 1).arg(total_batches).arg(error));
 
             // Error recovery: let user choose
             progress_dialog.hide();
@@ -687,7 +826,7 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
         // If partial parse failure, retry once
         if (parsed_count < batch_size) {
             int failed = batch_size - parsed_count;
-            log(QString("\xe2\x9a\xa0\xef\xb8\x8f %1/%2 files parsed. Retrying %3 failed...")
+            log(QString("%1/%2 files parsed. Retrying %3 failed...")
                 .arg(parsed_count).arg(batch_size).arg(failed));
 
             // Build a retry prompt with just the failed file indices
@@ -732,7 +871,7 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
     }
 
     double total_secs = elapsed.elapsed() / 1000.0;
-    log(QString("\xe2\x9c\x85 Analysis complete \xe2\x80\x94 %1 files classified (%2s)")
+    log(QString("Analysis complete -- %1 files classified (%2s)")
         .arg(files_classified).arg(total_secs, 0, 'f', 1));
 
     // Handle new categories: add AI-generated folders to the tree
@@ -749,7 +888,7 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
 
         // Cap new folders
         if (new_folders.size() > kMaxAiGeneratedFolders) {
-            log(QString("\xe2\x9a\xa0\xef\xb8\x8f AI suggested %1 new folders (capped at %2)")
+            log(QString("AI suggested %1 new folders (capped at %2)")
                 .arg(new_folders.size()).arg(kMaxAiGeneratedFolders));
             QStringList sorted_list = new_folders.values();
             sorted_list.sort();
@@ -774,6 +913,9 @@ void AiFileTinderDialog::run_ai_analysis(bool remaining_only) {
     // Wait a moment so user can see the completion message
     QTimer::singleShot(1500, &progress_dialog, &QDialog::accept);
     progress_dialog.exec();
+
+    // Enable re-run button after first analysis
+    if (rerun_ai_btn_) rerun_ai_btn_->setEnabled(true);
 
     // Apply results based on mode
     if (sort_mode_ == AiSortMode::Auto) {
@@ -915,55 +1057,87 @@ QString AiFileTinderDialog::send_api_request(const QString& prompt, QString& err
     }
 
     requests_this_minute_++;
-    QNetworkReply* reply = network_manager_->post(request, QJsonDocument(body).toJson());
+    last_request_ms_ = QDateTime::currentMSecsSinceEpoch();
 
-    QEventLoop loop;
-    connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
-    loop.exec();
+    // Smart retry loop: automatic backoff on 429 (rate limited)
+    int max_retries = is_free_tier_ ? 4 : 2;
+    for (int attempt = 0; attempt <= max_retries; ++attempt) {
+        QNetworkReply* reply = network_manager_->post(request, QJsonDocument(body).toJson());
 
-    if (reply->error() != QNetworkReply::NoError) {
-        error_out = reply->errorString();
-        QString resp_body = reply->readAll();
-        if (!resp_body.isEmpty()) {
-            error_out += " \xe2\x80\x94 " + resp_body.left(300);
+        QEventLoop loop;
+        connect(reply, &QNetworkReply::finished, &loop, &QEventLoop::quit);
+        loop.exec();
+
+        int http_status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+        if (http_status == 429 && attempt < max_retries) {
+            // Rate limited — exponential backoff
+            consecutive_429s_++;
+            int retry_after = 5;
+            QByteArray retry_hdr = reply->rawHeader("Retry-After");
+            if (!retry_hdr.isEmpty()) retry_after = qMax(retry_hdr.toInt(), 1);
+            int backoff_secs = qMin(retry_after * (1 << attempt), 120);
+            reply->deleteLater();
+
+            LOG_INFO("AIMode", QString("429 rate limited, retry %1/%2 in %3s")
+                .arg(attempt + 1).arg(max_retries).arg(backoff_secs));
+            QEventLoop backoff_loop;
+            QTimer::singleShot(backoff_secs * 1000, &backoff_loop, &QEventLoop::quit);
+            backoff_loop.exec();
+            continue;
         }
+
+        if (reply->error() != QNetworkReply::NoError) {
+            error_out = reply->errorString();
+            QString resp_body = reply->readAll();
+            if (!resp_body.isEmpty()) {
+                error_out += " -- " + resp_body.left(300);
+            }
+            reply->deleteLater();
+            return {};
+        }
+
+        // Success — reset 429 counter
+        consecutive_429s_ = 0;
+
+        QByteArray response_data = reply->readAll();
         reply->deleteLater();
-        return {};
-    }
 
-    QByteArray response_data = reply->readAll();
-    reply->deleteLater();
+        QJsonDocument doc = QJsonDocument::fromJson(response_data);
+        QString content_text;
 
-    QJsonDocument doc = QJsonDocument::fromJson(response_data);
-    QString content_text;
-
-    if (provider_config_.provider_name == "Anthropic") {
-        QJsonArray content_arr = doc.object()["content"].toArray();
-        if (!content_arr.isEmpty()) {
-            content_text = content_arr[0].toObject()["text"].toString();
-        }
-    } else if (provider_config_.provider_name == "Google Gemini") {
-        QJsonArray candidates = doc.object()["candidates"].toArray();
-        if (!candidates.isEmpty()) {
-            QJsonObject content = candidates[0].toObject()["content"].toObject();
-            QJsonArray parts = content["parts"].toArray();
-            if (!parts.isEmpty()) {
-                content_text = parts[0].toObject()["text"].toString();
+        if (provider_config_.provider_name == "Anthropic") {
+            QJsonArray content_arr = doc.object()["content"].toArray();
+            if (!content_arr.isEmpty()) {
+                content_text = content_arr[0].toObject()["text"].toString();
+            }
+        } else if (provider_config_.provider_name == "Google Gemini") {
+            QJsonArray candidates = doc.object()["candidates"].toArray();
+            if (!candidates.isEmpty()) {
+                QJsonObject content = candidates[0].toObject()["content"].toObject();
+                QJsonArray parts = content["parts"].toArray();
+                if (!parts.isEmpty()) {
+                    content_text = parts[0].toObject()["text"].toString();
+                }
+            }
+        } else {
+            QJsonArray choices = doc.object()["choices"].toArray();
+            if (!choices.isEmpty()) {
+                content_text = choices[0].toObject()["message"].toObject()["content"].toString();
             }
         }
-    } else {
-        QJsonArray choices = doc.object()["choices"].toArray();
-        if (!choices.isEmpty()) {
-            content_text = choices[0].toObject()["message"].toObject()["content"].toString();
+
+        if (content_text.isEmpty()) {
+            error_out = "Empty response from AI";
+            return {};
         }
+
+        return content_text;
     }
 
-    if (content_text.isEmpty()) {
-        error_out = "Empty response from AI";
-        return {};
-    }
-
-    return content_text;
+    // All retries exhausted
+    error_out = "Rate limited after multiple retries";
+    return {};
 }
 
 std::vector<AiFileSuggestion> AiFileTinderDialog::parse_ai_response(

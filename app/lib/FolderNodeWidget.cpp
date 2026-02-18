@@ -123,7 +123,7 @@ void FolderNodeWidget::paintEvent(QPaintEvent*) {
     painter.setPen(Qt::white);
     QFont icon_font("Segoe UI Symbol", 20);
     painter.setFont(icon_font);
-    painter.drawText(QRect(10, 10, 40, 40), Qt::AlignCenter, is_virtual_ ? "📂" : "📁");
+    painter.drawText(QRect(10, 10, 40, 40), Qt::AlignCenter, is_virtual_ ? "[D]" : "[F]");
     
     // Draw display name
     QFont name_font("Segoe UI", ui::fonts::kNodeTitleSize, QFont::Bold);

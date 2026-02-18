@@ -732,7 +732,7 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
     // Duplicate detection: use cached flag from scan
     QString dup_warning;
     if (file.has_duplicate) {
-        dup_warning = "<br><span style='color: #e74c3c; font-size: 11px;'>⚠ Possible duplicate found</span>";
+        dup_warning = "<br><span style='color: #e74c3c; font-size: 11px;'>Warning: Possible duplicate found</span>";
     }
     
     file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
@@ -776,16 +776,16 @@ void StandaloneFileTinderDialog::update_stats() {
     if (!stats_label_) return;
     
     QString stats = QString(
-        "<span style='color: %1;'>✓ Keep: %2</span>  |  "
-        "<span style='color: %3;'>✗ Delete: %4</span>  |  "
-        "<span style='color: %5;'>↓ Skip: %6</span>"
+        "<span style='color: %1;'>Keep: %2</span>  |  "
+        "<span style='color: %3;'>Delete: %4</span>  |  "
+        "<span style='color: %5;'>Skip: %6</span>"
     ).arg(ui::colors::kKeepColor).arg(keep_count_)
      .arg(ui::colors::kDeleteColor).arg(delete_count_)
      .arg(ui::colors::kSkipColor).arg(skip_count_);
     
     // Only show Move count if there are moves (relevant in Advanced Mode)
     if (move_count_ > 0) {
-        stats += QString("  |  <span style='color: %1;'>📁 Move: %2</span>")
+        stats += QString("  |  <span style='color: %1;'>Move: %2</span>")
             .arg(ui::colors::kMoveColor).arg(move_count_);
     }
     
@@ -851,7 +851,7 @@ void StandaloneFileTinderDialog::on_keep() {
         
         // Visual feedback: brief flash on stats
         if (progress_label_) {
-            progress_label_->setText(QString("<span style='color: %1;'>✓ Kept: %2</span>")
+            progress_label_->setText(QString("<span style='color: %1;'>Kept: %2</span>")
                 .arg(ui::colors::kKeepColor, file.name));
         }
         
@@ -885,7 +885,7 @@ void StandaloneFileTinderDialog::on_delete() {
         
         // Visual feedback
         if (progress_label_) {
-            progress_label_->setText(QString("<span style='color: %1;'>✗ Deleted: %2</span>")
+            progress_label_->setText(QString("<span style='color: %1;'>Deleted: %2</span>")
                 .arg(ui::colors::kDeleteColor, file.name));
         }
         
@@ -1080,9 +1080,8 @@ void StandaloneFileTinderDialog::advance_to_next() {
     current_filtered_index_ = static_cast<int>(filtered_indices_.size());
     if (file_icon_label_) file_icon_label_->clear();
     if (preview_label_) {
-        preview_label_->setText("<div style='text-align: center; font-size: 48px;'>🎉</div>"
-                               "<div style='text-align: center; font-size: 18px; color: #2ecc71;'>"
-                               "All files reviewed!</div>");
+        preview_label_->setText("<div style='text-align: center; font-size: 18px; color: #2ecc71; margin-top: 40px;'>"
+                                "All files reviewed!</div>");
     }
     if (file_info_label_) {
         file_info_label_->setText("Click 'Finish Review' to execute your decisions.");
@@ -1379,7 +1378,7 @@ void StandaloneFileTinderDialog::show_review_summary() {
     
     btn_layout->addStretch();
     
-    auto* execute_btn = new QPushButton("Execute All ✓");
+    auto* execute_btn = new QPushButton("Execute All");
     execute_btn->setStyleSheet(
         "QPushButton { background-color: #2ecc71; color: white; font-weight: bold; "
         "padding: 10px 20px; border-radius: 6px; }"
@@ -1618,7 +1617,7 @@ void StandaloneFileTinderDialog::show_execution_results(const ExecutionResult& r
             connect(undo_btn, &QPushButton::clicked, this, [this, entry, undo_btn, action_item]() {
                 if (FileTinderExecutor::undo_action(entry)) {
                     undo_btn->setEnabled(false);
-                    undo_btn->setText("Done ✓");
+                    undo_btn->setText("Done");
                     action_item->setText(entry.action + " (undone)");
                     
                     // Remove from database log
@@ -1788,7 +1787,7 @@ bool StandaloneFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {
     QMenu menu(this);
     auto* adv_action = menu.addAction("Advanced Mode");
-    auto* ai_action = menu.addAction("\xF0\x9F\xA4\x96 AI Mode");
+    auto* ai_action = menu.addAction("AI Mode");
     QAction* selected = menu.exec(switch_mode_btn_->mapToGlobal(
         QPoint(0, switch_mode_btn_->height())));
     if (selected == adv_action) {
@@ -2109,12 +2108,14 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
     QString shortcuts = R"(
 <style>
     table { border-collapse: collapse; width: 100%; }
-    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #444; }
+    th, td { padding: 6px; text-align: left; border-bottom: 1px solid #444; }
     th { background-color: #34495e; color: white; }
     .key { font-family: monospace; background: #3d566e; padding: 2px 6px; border-radius: 3px; }
+    .section { background-color: #2c3e50; color: #3498db; font-weight: bold; }
 </style>
 <table>
 <tr><th>Key</th><th>Action</th></tr>
+<tr class='section'><td colspan='2'>All Modes</td></tr>
 <tr><td><span class='key'>→</span> Right Arrow</td><td>Keep file in original location</td></tr>
 <tr><td><span class='key'>←</span> Left Arrow</td><td>Mark file for deletion</td></tr>
 <tr><td><span class='key'>↓</span> Down Arrow</td><td>Skip file (no action)</td></tr>
@@ -2123,9 +2124,17 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <tr><td><span class='key'>Enter</span></td><td>Finish review and execute</td></tr>
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
 <tr><td><span class='key'>Esc</span></td><td>Close dialog</td></tr>
+<tr class='section'><td colspan='2'>Advanced / AI Mode</td></tr>
+<tr><td><span class='key'>K</span></td><td>Keep file</td></tr>
+<tr><td><span class='key'>1</span>-<span class='key'>0</span></td><td>Move file to Quick Access folder 1-10</td></tr>
+<tr><td>Click grid folder</td><td>Move file to that folder</td></tr>
+<tr class='section'><td colspan='2'>AI Mode</td></tr>
+<tr><td>AI Setup button</td><td>Configure provider, model, and sorting options</td></tr>
+<tr><td>Re-run AI button</td><td>Re-analyze unsorted or all files</td></tr>
+<tr><td>Semi mode</td><td>AI highlights suggested folders in the grid</td></tr>
 </table>
 <br>
-<b>Tip:</b> Use the search box to jump to a file by name. Right-click file name for more options.
+<b>Tip:</b> Use the search box to find files by name (Enter cycles through matches). Right-click file name for more options. In AI mode, click 'AI Setup' to configure before sorting.
 )";
     
     help_dialog.setTextFormat(Qt::RichText);

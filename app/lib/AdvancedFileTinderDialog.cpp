@@ -96,7 +96,7 @@ void AdvancedFileTinderDialog::setup_ui() {
     connect(switch_mode_btn_, &QPushButton::clicked, this, [this]() {
         QMenu menu(this);
         auto* basic_action = menu.addAction("Basic Mode");
-        auto* ai_action = menu.addAction("\xF0\x9F\xA4\x96 AI Mode");
+        auto* ai_action = menu.addAction("AI Mode");
         QAction* selected = menu.exec(switch_mode_btn_->mapToGlobal(
             QPoint(0, switch_mode_btn_->height())));
         if (selected == basic_action) {

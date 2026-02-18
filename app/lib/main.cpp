@@ -205,7 +205,7 @@ private:
         connect(adv_mode_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_advanced);
         modes_row->addWidget(adv_mode_btn);
         
-        auto* ai_mode_btn = new QPushButton("\xF0\x9F\xA4\x96 AI Mode\n(AI-assisted sorting)");
+        auto* ai_mode_btn = new QPushButton("AI Mode\n(AI-assisted sorting)");
         ai_mode_btn->setMinimumSize(ui::scaling::scaled(180), ui::scaling::scaled(70));
         ai_mode_btn->setStyleSheet(
             "QPushButton { padding: 12px; background-color: #2980b9; color: white; border: none; font-size: 13px; }"
@@ -276,7 +276,7 @@ private:
             return false;
         }
         
-        // Collect stats (show progress for large dirs)
+        // Collect file stats (show progress for large dirs)
         qint64 total_size = 0;
         int img_count = 0, vid_count = 0, aud_count = 0, doc_count = 0, arch_count = 0, other_count = 0;
         QMimeDatabase mime_db;
@@ -308,6 +308,10 @@ private:
         }
         delete progress;
         
+        // Collect subfolder info
+        QStringList subfolders = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        int folder_count = subfolders.size();
+        
         // Format size
         QString size_str;
         if (total_size < 1024LL) size_str = QString("%1 B").arg(total_size);
@@ -329,9 +333,9 @@ private:
         
         auto* summary = new QLabel(QString(
             "<div style='font-size: 14px; margin: 10px 0;'>"
-            "<b>%1 files</b> &middot; %2 total"
+            "<b>%1 files</b> &middot; %2 total &middot; <b>%3 subfolders</b>"
             "</div>"
-        ).arg(files.size()).arg(size_str));
+        ).arg(files.size()).arg(size_str).arg(folder_count));
         layout->addWidget(summary);
         
         // Type breakdown
@@ -355,6 +359,34 @@ private:
         add_row("Other", other_count, "#95a5a6");
         
         layout->addWidget(breakdown);
+        
+        // Folder section
+        if (folder_count > 0) {
+            auto* folder_widget = new QWidget();
+            folder_widget->setStyleSheet("background-color: #2c3e50; border-radius: 8px; padding: 10px;");
+            auto* folder_layout = new QVBoxLayout(folder_widget);
+            
+            auto* folder_header = new QLabel(QString(
+                "<span style='color: #ecf0f1; font-size: 13px; font-weight: bold;'>Subfolders (%1)</span>"
+            ).arg(folder_count));
+            folder_layout->addWidget(folder_header);
+            
+            // Show up to 10 subfolders, with "and N more..." if needed
+            int show_count = qMin(folder_count, 10);
+            QString folder_list;
+            for (int i = 0; i < show_count; ++i) {
+                folder_list += QString("<span style='color: #bdc3c7; font-size: 11px;'>  %1</span><br>").arg(subfolders[i]);
+            }
+            if (folder_count > 10) {
+                folder_list += QString("<span style='color: #95a5a6; font-size: 11px;'>  ...and %1 more</span>").arg(folder_count - 10);
+            }
+            auto* folder_list_label = new QLabel(folder_list);
+            folder_list_label->setWordWrap(true);
+            folder_layout->addWidget(folder_list_label);
+            
+            layout->addWidget(folder_widget);
+        }
+        
         layout->addStretch();
         
         auto* btn_layout = new QHBoxLayout();
@@ -586,7 +618,7 @@ private:
                 
                 if (FileTinderExecutor::undo_action(entry)) {
                     undo_btn->setEnabled(false);
-                    undo_btn->setText("Done ✓");
+                    undo_btn->setText("Done");
                     action_item->setText(action + " (undone)");
                     db_manager_.remove_execution_log_entry(id);
                     LOG_INFO("UndoHistory", QString("Undone: %1 %2").arg(action, src));
