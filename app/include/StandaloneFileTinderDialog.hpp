@@ -107,6 +107,7 @@ protected:
     int delete_count_;
     int skip_count_;
     int move_count_;
+    int copy_count_ = 0;
     
     // Undo stack
     std::vector<ActionRecord> undo_stack_;

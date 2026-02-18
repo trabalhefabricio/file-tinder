@@ -798,6 +798,7 @@ void StandaloneFileTinderDialog::update_decision_count(const QString& old_decisi
     else if (old_decision == "delete") delete_count_ += delta;
     else if (old_decision == "skip") skip_count_ += delta;
     else if (old_decision == "move") move_count_ += delta;
+    else if (old_decision == "copy") copy_count_ += delta;
 }
 
 int StandaloneFileTinderDialog::get_current_file_index() const {
@@ -1210,6 +1211,8 @@ void StandaloneFileTinderDialog::show_review_summary() {
     stats_layout->addWidget(create_stat_box("Delete", delete_count_, ui::colors::kDeleteColor));
     stats_layout->addWidget(create_stat_box("Skip", skip_count_, ui::colors::kSkipColor));
     stats_layout->addWidget(create_stat_box("Move", move_count_, ui::colors::kMoveColor));
+    if (copy_count_ > 0)
+        stats_layout->addWidget(create_stat_box("Copy", copy_count_, "#8e44ad"));
     
     layout->addWidget(stats_widget);
     
@@ -2138,13 +2141,16 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <tr><td><span class='key'>K</span></td><td>Keep file</td></tr>
 <tr><td><span class='key'>1</span>-<span class='key'>0</span></td><td>Move file to Quick Access folder 1-10</td></tr>
 <tr><td>Click grid folder</td><td>Move file to that folder</td></tr>
+<tr><td>Full Paths toggle</td><td>Show folder path structure in grid buttons</td></tr>
+<tr><td>Width spinner</td><td>Adjust grid button width (80-300px)</td></tr>
 <tr class='section'><td colspan='2'>AI Mode</td></tr>
 <tr><td>AI Setup button</td><td>Configure provider, model, and sorting options</td></tr>
 <tr><td>Re-run AI button</td><td>Re-analyze unsorted or all files</td></tr>
-<tr><td>Semi mode</td><td>AI highlights suggested folders in the grid</td></tr>
+<tr><td>Semi mode</td><td>AI highlights suggested folders in grid + AI Suggestions bar</td></tr>
+<tr><td>Category review</td><td>Edit AI-proposed categories before they are created</td></tr>
 </table>
 <br>
-<b>Tip:</b> Use the search box to find files by name (Enter cycles through matches). Right-click file name for more options. In AI mode, click 'AI Setup' to configure before sorting.
+<b>Tip:</b> Use the search box to find files by name (Enter cycles through matches). In the review screen, type folder paths directly into the destination dropdown. Right-click folders for context menu. In AI mode, click 'AI Setup' to configure before sorting.
 )";
     
     help_dialog.setTextFormat(Qt::RichText);

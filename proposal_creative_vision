@@ -1,0 +1,164 @@
+CREATIVE VISION: Future Improvements for File Tinder
+=====================================================
+
+This document outlines improvements, quality-of-life features, and UI changes
+that would enhance the tool. Organized by category with priority levels.
+
+
+I. WORKFLOW IMPROVEMENTS
+========================
+
+1. Drag-and-Drop File Assignment (High Priority)
+   Drag a file card directly onto a folder button in the grid.
+   Instant visual feedback (folder glows on hover), no clicks needed.
+   Works in both Advanced and AI modes.
+
+2. Multi-Select File Operations (High Priority)
+   Select multiple files in the file list (Shift+click, Ctrl+click).
+   Apply the same decision to all selected at once.
+   Useful for batch-assigning files to the same folder.
+
+3. Undo History Panel (Medium Priority)
+   Expandable panel showing the last N actions with timestamps.
+   Click any entry to undo back to that point (multi-step undo).
+   Currently undo is one-at-a-time via stack.
+
+4. File Comparison View (Medium Priority)
+   When a duplicate is detected, show a side-by-side diff.
+   For images: visual comparison. For text: content diff.
+   For binaries: metadata comparison (date, size, hash).
+
+5. Session Persistence Across App Restarts (Low Priority)
+   Currently sessions are tied to a single launch.
+   Allow resuming a partially-completed sorting session.
+   Show "Resume Session" option on launcher for interrupted sessions.
+
+
+II. AI MODE ENHANCEMENTS
+=========================
+
+6. Confidence Score Display (High Priority)
+   Show the AI's confidence percentage next to each folder suggestion.
+   Color-code: green (>80%), yellow (50-80%), red (<50%).
+   Let users set a minimum confidence threshold.
+
+7. Learning from User Corrections (High Priority)
+   Track when users override AI suggestions in semi mode.
+   Build a local feedback file that improves future sorting.
+   "The user moved X to Y instead of AI-suggested Z" patterns.
+
+8. Template Presets (Medium Priority)
+   Pre-built sorting templates: "Downloads Cleanup", "Photo Organization",
+   "Development Project", "Music Library", "Document Archive".
+   Each template includes folder structure + folder purpose prompts.
+
+9. AI Reasoning Panel (Medium Priority)
+   A collapsible side panel showing the AI's reasoning for the current file.
+   Already stored in suggestions_.reasoning but not surfaced in the UI.
+   Show what the AI determined about the file's identity and category.
+
+10. Incremental Learning Cache (Low Priority)
+    Cache file-type identifications locally (hash -> identity).
+    Skip re-analyzing files the AI has seen before.
+    Speeds up re-runs and saves API costs.
+
+
+III. UI/UX IMPROVEMENTS
+========================
+
+11. Dark/Light Theme Toggle (High Priority)
+    Currently hardcoded dark theme only.
+    Add a light theme option. Store preference in database.
+    Some users prefer light themes for readability.
+
+12. File Preview Enhancements (High Priority)
+    Audio files: play a short preview (first 10 seconds).
+    PDF: show first page thumbnail via poppler or similar.
+    Video: show thumbnail frame at 25% mark.
+    Code/text: syntax highlighting in the preview panel.
+
+13. Progress Ring Instead of Bar (Medium Priority)
+    Replace the thin progress bar with a circular progress indicator.
+    Show percentage in the center. More visually appealing.
+    Especially useful for the AI analysis progress dialog.
+
+14. Keyboard-First Navigation (Medium Priority)
+    Tab through grid folders, arrow keys to navigate.
+    Space to select/assign. Full keyboard-only workflow.
+    Important for power users who don't want to touch the mouse.
+
+15. Customizable Color Coding (Low Priority)
+    Let users assign colors to folders or file types.
+    Grid folders could have custom background colors.
+    File cards could be tinted by type (green=images, blue=docs, etc).
+
+16. Responsive Layout (Low Priority)
+    Auto-adjust grid columns and button sizes based on window size.
+    Currently fixed sizes that may not suit all screen resolutions.
+    Mobile-friendly layout for smaller screens.
+
+
+IV. DATA AND ANALYTICS
+=======================
+
+17. Sorting Statistics Dashboard (Medium Priority)
+    Historical view: how many files sorted per session, over time.
+    Category breakdown: which folders get the most files.
+    AI accuracy tracking: how often users accept AI suggestions.
+
+18. Export Session Report (Medium Priority)
+    Generate a summary of what was sorted where (CSV or HTML).
+    Useful for documentation: "here's what I organized today".
+    Include before/after folder structure visualization.
+
+19. Duplicate Intelligence (Low Priority)
+    Beyond name+size matching, add content hashing (MD5/SHA).
+    Suggest keeping the newest or largest version.
+    Group duplicates for batch decision-making.
+
+
+V. INTEGRATION AND EXTENSIBILITY
+=================================
+
+20. Plugin System for Custom Rules (Low Priority)
+    User-defined sorting rules: "if filename contains X, move to Y".
+    Regex-based pattern matching for automatic categorization.
+    Could work alongside AI mode or independently.
+
+21. Cloud Storage Integration (Low Priority)
+    Support sorting files from Google Drive, Dropbox, OneDrive.
+    Read-only scan + move operations via API.
+    Would require OAuth integration per provider.
+
+22. Command-Line Interface (Low Priority)
+    Non-GUI mode for scripted/automated sorting.
+    `file-tinder --auto --folder ~/Downloads --config preset.json`
+    Useful for cron jobs or CI/CD file organization.
+
+
+VI. SUGGESTED IMPLEMENTATION ORDER
+===================================
+
+Immediate (next sprint):
+  - #6 Confidence scores (data already exists, just needs UI)
+  - #9 AI reasoning panel (data already stored, needs display)
+  - #11 Dark/Light theme toggle
+  - #1 Drag-and-drop assignment
+
+Short-term:
+  - #2 Multi-select operations
+  - #7 Learning from corrections
+  - #12 File preview enhancements
+  - #14 Keyboard navigation
+
+Medium-term:
+  - #3 Undo history panel
+  - #8 Template presets
+  - #17 Statistics dashboard
+  - #18 Export reports
+
+Long-term:
+  - #4 File comparison view
+  - #10 Incremental learning cache
+  - #20 Plugin system
+  - #5 Session persistence
