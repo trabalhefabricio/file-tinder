@@ -1,0 +1,424 @@
+FILE TINDER — COMPREHENSIVE PROGRAM ASSESSMENT
+================================================
+
+Codebase: ~8,500 LOC (C++17/Qt6), 15 source files, 15 headers
+Architecture: Three-mode file organizer (Basic/Advanced/AI) with SQLite persistence
+
+
+==============================================================================
+SECTION 1: OVERALL GRADE
+==============================================================================
+
+Category                      Grade    Notes
+----------------------------  -------  -----------------------------------------
+Architecture & Design         A-       Clean inheritance chain, good separation
+Code Quality                  B+       Consistent style, minimal dead code
+Feature Completeness          B+       Core modes solid, some features shallow
+UI/UX Design                  B        Functional but needs polish in places
+Error Handling                B+       Comprehensive in executor, gaps in AI mode
+Security                      B-       SQL safe, but plaintext API keys
+Performance                   B+       Efficient scanning, smart preview loading
+Documentation                 C+       README outdated, no inline API docs
+Testing                       F        Zero unit tests
+Cross-Platform                B+       Good Qt abstractions, proper trash handling
+
+OVERALL: B / B+
+The program has a solid architecture and impressive feature set for its size.
+The main gaps are testing, documentation updates, and depth of recent features.
+
+
+==============================================================================
+SECTION 2: WHAT IS STRONG
+==============================================================================
+
+1. ARCHITECTURE
+   - The three-layer inheritance (Standalone -> Advanced -> AI) is clean
+   - Each mode genuinely builds on the previous without duplication
+   - Database session isolation is well-designed
+   - Signal/slot wiring is consistent and leak-free
+
+2. CORE FILE MANAGEMENT
+   - FileTinderExecutor is robust: 3-phase execution, collision handling,
+     cross-platform trash support, per-action undo
+   - Session persistence works: resume interrupted sorting across restarts
+   - Duplicate detection with optional hash verification is practical
+
+3. ADVANCED MODE GRID
+   - MindMapView is the heart of the program and it works well
+   - Drag-drop reposition, keyboard navigation, context menu, color coding
+   - Grid config save/load with metadata is thoughtful engineering
+   - Template presets are a great onboarding feature
+
+4. AI MODE CONCEPT
+   - The Auto/Semi mode distinction is well-conceived
+   - Taxonomy-aware prompting (Serum = VST plugin, not just DLL) is the
+     right approach
+   - Category review step gives users control
+   - Multi-provider support with smart rate limiting is enterprise-grade thinking
+
+5. TECHNICAL EXECUTION
+   - Zero SQL injection (all parameterized queries)
+   - Qt parent-child memory management used correctly throughout
+   - DPI scaling via ui::scaling::factor() applied consistently
+   - Cross-platform trash handling (Windows SHFileOperation, macOS osascript,
+     Linux gio)
+
+6. DIAGNOSTIC TOOL
+   - 22 test suites covering DB, file ops, UI, MIME, memory — excellent
+     for debugging on user machines
+
+
+==============================================================================
+SECTION 3: WHAT IS MISSING
+==============================================================================
+
+1. UNIT TESTS [CRITICAL]
+   - Zero automated tests. No GoogleTest, no Qt Test, nothing.
+   - DiagnosticTool is manual/interactive, not CI-compatible
+   - DatabaseManager, FileTinderExecutor, FolderTreeModel all need test coverage
+   - At minimum: DB CRUD tests, executor move/delete/undo tests, tree
+     manipulation tests, filter logic tests
+   - This is the single biggest gap in the project
+
+2. README IS OUTDATED [HIGH]
+   - Does not mention AI Mode at all
+   - Does not list Qt6::Network dependency
+   - Does not list FileListWindow, DuplicateDetectionWindow, or any
+     creative vision features
+   - Project structure section is missing 6 files:
+     AiFileTinderDialog, FileListWindow, DuplicateDetectionWindow,
+     plus the corresponding headers
+   - Database schema section is missing: ai_providers, grid_configs,
+     execution_log tables
+   - Keyboard shortcuts section missing AI mode, File List (F key),
+     Tab for grid navigation, etc.
+   - Build section missing libqt6sql6-sqlite for Ubuntu
+
+3. INLINE DOCUMENTATION [HIGH]
+   - No Doxygen-style comments on any public method
+   - No file-level comments explaining what each class does
+   - Header files have no API documentation
+   - Complex methods like build_analysis_prompt(), parse_ai_response(),
+     execute_decisions() need parameter/return docs
+
+4. AI MODE DEPTH [MEDIUM]
+   - The AI engine has never been tested against live API endpoints
+   - No integration tests for API response parsing
+   - Response parsing assumes specific JSON structure without schema
+     validation
+   - Confidence scores are requested but the prompt gives no guidance
+     on calibration — an 80% from GPT-4 means something different than
+     80% from Llama
+   - Correction tracking is session-only (lost on restart)
+   - No offline fallback or mock mode for development/testing
+
+5. ACCESSIBILITY [MEDIUM]
+   - No screen reader support (QAccessible)
+   - No high contrast mode
+   - Color coding relies solely on color (no pattern/icon alternative)
+   - Font sizes are hardcoded — no user font scaling option
+   - Tab order in basic mode is not explicitly defined
+
+6. FILE HANDLING EDGE CASES [MEDIUM]
+   - No handling of symlinks (follows them silently, could cause loops)
+   - No handling of files that change during session (modified/deleted
+     externally)
+   - No file locking during execution phase
+   - No handling of insufficient disk space before copy/move
+   - Maximum path length not checked (Windows 260 char limit)
+
+7. INTERNATIONALIZATION [LOW]
+   - All strings are hardcoded English
+   - No QTranslator or tr() usage
+   - Date formatting uses hardcoded locale
+
+8. CONFIGURATION MANAGEMENT [LOW]
+   - Settings scattered: QSettings for theme, SQLite for sessions,
+     hardcoded for UI dimensions
+   - No unified settings dialog
+   - No export/import of all settings
+
+
+==============================================================================
+SECTION 4: WHAT CAN BE IMPROVED
+==============================================================================
+
+1. STANDALONE FILE TINDER DIALOG (StandaloneFileTinderDialog.cpp — 2,309 lines)
+   - This file is too large. It handles:
+     * UI setup (540 lines)
+     * File scanning (80 lines)
+     * Decision handling (200 lines)
+     * Review screen (250 lines)
+     * Execution (100 lines)
+     * Results display (150 lines)
+     * Animation (50 lines)
+     * Filtering/sorting (200 lines)
+     * Event handling (150 lines)
+   - Should be split: ReviewScreen into its own class, FilterManager,
+     AnimationHelper, FileScanner
+
+2. AI FILE TINDER DIALOG (AiFileTinderDialog.cpp — 1,613 lines)
+   - AiSetupDialog is embedded inside AiFileTinderDialog — should be its
+     own file (it's 500+ lines)
+   - The API call logic (send_api_request) mixes HTTP mechanics with
+     business logic — should be a separate AiApiClient class
+   - Rate limiting logic is interleaved with batch processing — should
+     be a RateLimiter utility class
+   - Prompt building is a 80-line method with string concatenation —
+     should use a template system or at least be in its own file
+
+3. DATABASE MANAGER IMPROVEMENTS
+   - Table creation happens lazily in various methods instead of all at
+     init time — fragile if two methods race
+   - No database migration system — schema changes require manual
+     intervention or data loss
+   - 6 qWarning() calls should use AppLogger for consistency
+   - No transaction support for batch operations (save_grid_config saves
+     N paths in N separate inserts)
+   - Missing indexes on frequently-queried columns (folder_path, session_folder)
+
+4. MIND MAP VIEW
+   - Grid layout algorithm is O(n) but rebuilds everything on every change
+   - No virtualization for large folder sets (>100 folders could be slow)
+   - Keyboard navigation focused_index_ can go out of bounds if folders
+     change during navigation
+   - Highlight colors are hardcoded strings, not using ui::colors constants
+
+5. EXECUTION SAFETY
+   - FileTinderExecutor line 164-166: logs success before verifying the
+     source file no longer exists after move
+   - No dry-run mode to preview what will happen
+   - No checksum verification after copy
+   - Collision handling tries 10,000 suffix numbers — could be replaced
+     with UUID suffix for guaranteed uniqueness
+
+6. UI CONSTANTS VS REALITY
+   - ui_constants.hpp defines many values (kNodeWidth=250, kNodeHeight=60,
+     kQuickAccessButtonWidth=100) that are NOT actually used in the code
+   - MindMapView uses hardcoded 120/180 widths and 28/32/36 heights
+   - ui::icons references SVG files that may not all exist in resources
+   - ui::colors defines colors but code uses hardcoded hex strings instead
+
+7. LOGGING INCONSISTENCY
+   - AppLogger exists with levels (TRACE through CRITICAL) and thread safety
+   - But DatabaseManager uses qWarning() instead
+   - Main.cpp uses qDebug in some places
+   - No structured logging (just string messages)
+   - Log rotation based on line count (1000) not file size
+
+8. COST ESTIMATION
+   - Hardcoded token prices that will become outdated
+   - No actual token counting (estimates 200 tokens/file input, 80 output)
+   - Does not account for system prompt tokens
+   - No way to set a budget cap
+
+9. REVIEW SCREEN
+   - show_review_summary() is a 250-line monolith building the entire UI
+     inline — should be a separate widget class
+   - No sorting/filtering in the review table
+   - No batch "move all to folder X" shortcut
+   - The "copy" decision was added but copy_count_ is not displayed
+     in the pre-execution stat summary on the basic mode
+
+
+==============================================================================
+SECTION 5: WHAT IS REDUNDANT
+==============================================================================
+
+1. DEAD CODE
+   - on_back() in StandaloneFileTinderDialog: defined but never called
+     (replaced by undo)
+   - show_folder_picker() in StandaloneFileTinderDialog: appears unused
+   - skip_stats_on_next_launch_ in main.cpp: declared but never read
+   - kNodeWidth, kNodeHeight, kAddNodeWidth, kAddNodeHeight, most of
+     ui::icons — defined in ui_constants.hpp but never used in any .cpp
+
+2. DUPLICATE FUNCTIONALITY
+   - FolderNodeWidget.cpp (202 lines) creates a custom-painted folder
+     widget but MindMapView uses FolderButton (a styled QPushButton)
+     instead — FolderNodeWidget appears completely unused
+   - search function in basic mode coexists with FileListWindow which
+     replaces it — one should be removed or they should be unified
+   - Quick Access in Advanced Mode and AI Suggestions in AI Mode have
+     overlapping UX — both are horizontal clickable folder lists. The
+     AI Suggestions panel should feel more distinct
+
+3. OVER-ENGINEERING
+   - DiagnosticTool.cpp at 1,484 lines is the largest file in the project,
+     larger than any feature file. 22 test suites for a project with no
+     automated tests is a contradiction — the energy would be better
+     spent on actual unit tests
+   - Folder connections system (tinder_folder_connections table,
+     is_connected flags) — the feature exists in the DB schema and model
+     but has no visible UI interaction. Either implement it fully or remove
+   - ImagePreviewWindow has fit modes, zoom slider, and keyboard shortcuts
+     for a preview window — may be over-featured for the use case
+
+4. PROPOSAL DOCUMENTS
+   - Three proposal documents (proposal_ai_mode, proposal_creative_vision,
+     proposal_file_system_tracking) in the root directory. These are design
+     artifacts, not runtime code. Should be in a docs/ folder or removed
+     from the repo after features are implemented.
+
+
+==============================================================================
+SECTION 6: BUGS AND ISSUES
+==============================================================================
+
+1. CONFIRMED BUGS
+   - AiFileTinderDialog line ~1308: consecutive_429s_-- can go negative
+     (should be qMax(consecutive_429s_ - 1, 0))
+   - AiFileTinderDialog: QEventLoop blocking on rate limit (lines 910-932)
+     freezes the UI — should be async with QTimer
+   - AiFileTinderDialog line 116: model combo has NoInsert policy but
+     placeholder says "or type a model name" — contradictory
+   - MindMapView: focused_index_ not bounds-checked when folder list
+     changes during keyboard navigation
+   - AiFileTinderDialog: re-categorization resets move_count_-- without
+     verifying folder_model changes succeeded
+
+2. POTENTIAL ISSUES
+   - FileTinderExecutor: move success logged before verifying source
+     removal
+   - FolderTreeModel: no cycle detection in parent-child relationships
+   - DatabaseManager: lazy table creation could race under concurrent access
+   - No handling for files deleted externally during an active session
+   - Gemini auth handling sets empty Authorization header instead of
+     omitting it
+
+3. UI ISSUES
+   - Basic mode file card uses text-based icons ([IMG], [VID], [ZIP])
+     instead of actual icons despite SVG resources being available
+   - Theme toggle only available on launcher — cannot change theme
+     while in a mode without restarting
+   - Quick access item names truncated to 14 chars is too aggressive
+     for many folder names
+
+
+==============================================================================
+SECTION 7: SECURITY ASSESSMENT
+==============================================================================
+
+Grade: B-
+
+GOOD:
+- All SQL queries use parameterized bindings (no injection)
+- Qt parent-child memory model prevents most leaks
+- File operations validate paths before execution
+
+CONCERNS:
+- API keys stored in plaintext SQLite (should use OS keychain or at
+  minimum encrypt with a master password)
+- No input sanitization on user-typed folder paths in review screen
+- AI-generated folder paths validated but not sanitized for path
+  traversal attacks (../../)
+- Network requests to AI providers use HTTPS but certificate pinning
+  is not implemented
+- AppLogger writes to file without sanitizing log content
+
+
+==============================================================================
+SECTION 8: PERFORMANCE ASSESSMENT
+==============================================================================
+
+Grade: B+
+
+GOOD:
+- QImageReader::setScaledSize() for preview loading (avoids full decode)
+- Duplicate cache built at O(n) scan time, O(1) lookup
+- Batch processing for AI mode (50 files/request)
+- Debounced resize events for preview updates
+- Smart rate limiting prevents API throttling
+
+CONCERNS:
+- MindMapView rebuilds entire grid on every folder change (should diff)
+- No pagination for large directories (10,000+ files loaded into memory)
+- Review screen creates N combo boxes upfront (slow for 1000+ files)
+- FileListWindow has no virtualization (loads all items)
+- DatabaseManager inserts grid config paths one-by-one (no transaction)
+- MD5 hash in duplicate detection reads entire file into 64KB chunks —
+  could use memory-mapped I/O for large files
+
+
+==============================================================================
+SECTION 9: PRIORITIZED ACTION ITEMS
+==============================================================================
+
+PRIORITY 1 — CRITICAL (do before any release)
+  [ ] Add automated unit tests (GoogleTest or Qt Test)
+      — DatabaseManager CRUD, FileTinderExecutor ops, FolderTreeModel
+  [ ] Update README.md completely
+      — AI Mode section, new features, updated schema, dependencies
+  [ ] Fix consecutive_429s_ going negative
+  [ ] Replace QEventLoop blocking with async QTimer in rate limiting
+  [ ] Remove dead code: on_back(), skip_stats_on_next_launch_,
+      unused ui_constants
+
+PRIORITY 2 — HIGH (quality improvements)
+  [ ] Split StandaloneFileTinderDialog into smaller classes
+      — ReviewScreen, AnimationHelper, FileScanner
+  [ ] Extract AiSetupDialog into its own file
+  [ ] Extract AiApiClient from AiFileTinderDialog
+  [ ] Add database migration system
+  [ ] Add database indexes on session_folder columns
+  [ ] Migrate qWarning() to AppLogger in DatabaseManager
+  [ ] Add inline documentation (at minimum: all public methods in headers)
+  [ ] Move proposal documents to docs/ folder
+
+PRIORITY 3 — MEDIUM (feature depth)
+  [ ] Test AI mode against live API endpoints
+  [ ] Add AI mock/offline mode for development
+  [ ] Persist AI corrections across sessions
+  [ ] Add dry-run mode to executor
+  [ ] Handle symlinks in file scanning
+  [ ] Add disk space check before copy/move operations
+  [ ] Make theme toggle available within modes (not just launcher)
+  [ ] Replace text-based file icons with actual SVG icons
+
+PRIORITY 4 — LOW (polish)
+  [ ] Implement folder connections UI (or remove the DB table)
+  [ ] Remove FolderNodeWidget if truly unused
+  [ ] Unify or differentiate search vs FileListWindow
+  [ ] Use ui_constants consistently (or clean up unused constants)
+  [ ] Add accessibility support (QAccessible, high contrast)
+  [ ] Add internationalization framework (tr(), QTranslator)
+  [ ] Review screen sorting/filtering
+  [ ] Budget cap for AI cost estimation
+
+
+==============================================================================
+SECTION 10: CREATIVE ASSESSMENT
+==============================================================================
+
+The program has a genuinely clever core concept — applying the swipe
+metaphor to file organization is intuitive, and the three-mode progression
+(simple swipe -> visual grid -> AI-assisted) is well-thought-out.
+
+The Advanced Mode mind map is the strongest feature. It turns what is
+usually a tedious file management task into something that feels more like
+organizing a workspace. The grid sort, keyboard navigation, color coding,
+and template presets all contribute to a surprisingly satisfying workflow.
+
+The AI Mode is ambitious and architecturally sound. The taxonomy-aware
+approach (understanding what Serum actually is rather than just its
+extension) differentiates it from simple rule-based sorters. The Auto/Semi
+distinction gives users the right amount of control.
+
+Where the creative vision could deepen:
+- The Basic Mode feels like a prototype compared to Advanced. The swipe
+  animation is minimal (opacity fade), the file card is text-heavy with
+  bracket icons, and the layout feels like it was designed first and not
+  revisited. It would benefit from the same visual polish as Advanced.
+- The review screen is purely functional. For a tool built on UX
+  innovation, the final step (where users commit to their decisions)
+  deserves more attention — visual grouping by destination, drag-drop
+  reordering, a visual diff of what will change.
+- The connection between modes could be tighter. Switching modes currently
+  preserves state but doesn't carry context. If I sort 50 files in
+  Advanced Mode and switch to AI, the AI doesn't know about my sorting
+  patterns.
+
+
+==============================================================================
+END OF ASSESSMENT
+==============================================================================
