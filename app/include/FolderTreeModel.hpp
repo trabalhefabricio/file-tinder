@@ -18,6 +18,7 @@ struct FolderNode {
     bool is_external;                 // Folder outside the source folder
     int connection_group_id;          // Connection group ID
     int assigned_file_count;
+    QString custom_color;             // User-assigned color (hex, empty = default)
     FolderNode* parent;
     std::vector<std::unique_ptr<FolderNode>> children;
     

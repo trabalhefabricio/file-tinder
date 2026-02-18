@@ -209,6 +209,16 @@ FileDecision DatabaseManager::get_file_decision(const QString& session_folder, c
     return fd;
 }
 
+int DatabaseManager::get_session_pending_count(const QString& session_folder) {
+    QSqlQuery query(db_);
+    query.prepare("SELECT COUNT(*) FROM file_tinder_state WHERE folder_path = ? AND decision != 'pending'");
+    query.addBindValue(session_folder);
+    if (query.exec() && query.next()) {
+        return query.value(0).toInt();
+    }
+    return 0;
+}
+
 bool DatabaseManager::save_folder_tree_entry(const QString& session_folder, const FolderTreeEntry& entry) {
     QSqlQuery query(db_);
     query.prepare(R"(

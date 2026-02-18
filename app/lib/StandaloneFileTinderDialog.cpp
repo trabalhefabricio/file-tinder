@@ -284,17 +284,21 @@ void StandaloneFileTinderDialog::setup_ui() {
     filter_layout->addStretch();
     main_layout->addWidget(filter_bar);
     
-    // Preview area with centered icon
-    auto* preview_widget = new QWidget();
-    preview_widget->setStyleSheet("background-color: #2c3e50; border-radius: 8px;");
-    auto* preview_layout = new QVBoxLayout(preview_widget);
-    preview_layout->setContentsMargins(15, 15, 15, 15);
+    // File card — unified preview + info + stats panel
+    auto* file_card = new QWidget();
+    file_card->setStyleSheet(
+        "QWidget#fileCard { background-color: #2c3e50; border-radius: 8px; "
+        "border: 1px solid #34495e; }");
+    file_card->setObjectName("fileCard");
+    auto* card_layout = new QVBoxLayout(file_card);
+    card_layout->setContentsMargins(15, 10, 15, 10);
+    card_layout->setSpacing(6);
     
     // Centered file icon (for non-image files)
     file_icon_label_ = new QLabel();
     file_icon_label_->setAlignment(Qt::AlignCenter);
     file_icon_label_->setStyleSheet("font-size: 64px;");
-    preview_layout->addWidget(file_icon_label_);
+    card_layout->addWidget(file_icon_label_);
     
     // Preview label (for images/text) — wrapped in scroll area to prevent
     // text previews from expanding the window beyond its intended size
@@ -306,27 +310,29 @@ void StandaloneFileTinderDialog::setup_ui() {
     preview_scroll->setWidgetResizable(true);
     preview_scroll->setFrameShape(QFrame::NoFrame);
     preview_scroll->setStyleSheet("QScrollArea { background: transparent; }");
-    preview_layout->addWidget(preview_scroll, 1);
+    card_layout->addWidget(preview_scroll, 1);
     
-    // File name and info below preview — double-click to open
+    // File name and info — double-click to open
     file_info_label_ = new QLabel();
     file_info_label_->setAlignment(Qt::AlignCenter);
-    file_info_label_->setStyleSheet("color: #ecf0f1; padding: 10px; font-size: 13px;");
+    file_info_label_->setStyleSheet(
+        "color: #ecf0f1; padding: 8px 10px; font-size: 13px; "
+        "background-color: #34495e; border-radius: 4px;");
     file_info_label_->setWordWrap(true);
     file_info_label_->setCursor(Qt::PointingHandCursor);
     file_info_label_->setToolTip("Double-click to open file");
     file_info_label_->installEventFilter(this);
-    preview_layout->addWidget(file_info_label_);
+    card_layout->addWidget(file_info_label_);
     
     size_badge_label_ = new QLabel();
     size_badge_label_->setAlignment(Qt::AlignCenter);
     size_badge_label_->setStyleSheet(
         "font-size: 16px; font-weight: bold; color: #f39c12; "
-        "background-color: #2c3e50; padding: 4px 8px; border-radius: 4px;"
+        "padding: 4px 8px; border-radius: 4px;"
     );
-    preview_layout->addWidget(size_badge_label_);
+    card_layout->addWidget(size_badge_label_);
     
-    main_layout->addWidget(preview_widget, 1);  // Stretch to fill space
+    main_layout->addWidget(file_card, 1);  // Stretch to fill space
     
     // Progress section
     auto* progress_widget = new QWidget();
@@ -527,7 +533,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_layout->addWidget(bottom_bar);
     
     // Keyboard shortcuts hint
-    shortcuts_label_ = new QLabel("→ Keep  |  ← Delete  |  ↓ Skip  |  Z/⌫ Undo  |  P Preview  |  Enter Finish  |  ? Help");
+    shortcuts_label_ = new QLabel("Right=Keep | Left=Delete | Down=Skip | Z=Undo | F=File List | Ctrl+F=Search | P=Preview | Enter=Finish | ?=Help");
     shortcuts_label_->setAlignment(Qt::AlignCenter);
     shortcuts_label_->setStyleSheet("color: #7f8c8d; font-size: 10px;");
     main_layout->addWidget(shortcuts_label_);
@@ -1751,6 +1757,12 @@ void StandaloneFileTinderDialog::show_execution_results(const ExecutionResult& r
 }
 
 void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
+    // Don't intercept keys when a text input has focus
+    if (search_box_ && search_box_->hasFocus()) {
+        QDialog::keyPressEvent(event);
+        return;
+    }
+
     switch (event->key()) {
         case Qt::Key_Right:
             on_keep();
@@ -1768,12 +1780,46 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
             on_undo();
             break;
         case Qt::Key_Z:
-            // Undo last action
             on_undo();
             break;
         case Qt::Key_P:
-            // Open preview in separate window
             on_show_preview();
+            break;
+        case Qt::Key_F:
+            // F opens the File List window
+            if (event->modifiers() & Qt::ControlModifier) {
+                // Ctrl+F focuses search box
+                if (search_box_) { search_box_->setFocus(); search_box_->selectAll(); }
+            } else {
+                // F opens File List window (same as clicking "File List" button)
+                {
+                    auto* flw = new FileListWindow(files_, filtered_indices_, current_filtered_index_, this);
+                    connect(flw, &FileListWindow::file_selected, this, [this](int filtered_idx) {
+                        if (filtered_idx >= 0 && filtered_idx < static_cast<int>(filtered_indices_.size())) {
+                            current_filtered_index_ = filtered_idx;
+                            show_current_file();
+                        }
+                    });
+                    connect(flw, &FileListWindow::files_assigned, this, [this](const QList<int>& indices, const QString& dest) {
+                        for (int fi : indices) {
+                            if (fi >= 0 && fi < static_cast<int>(files_.size())) {
+                                auto& file = files_[fi];
+                                QString old_decision = file.decision;
+                                file.decision = "move";
+                                file.destination_folder = dest;
+                                update_decision_count(old_decision, -1);
+                                move_count_++;
+                                record_action(fi, old_decision, "move", dest);
+                            }
+                        }
+                        update_progress();
+                        update_stats();
+                        show_current_file();
+                    });
+                    flw->set_destination_folders(get_destination_folders());
+                    flw->show();
+                }
+            }
             break;
         case Qt::Key_Return:
         case Qt::Key_Enter:
@@ -1785,7 +1831,6 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
                 show_shortcuts_help();
             }
             break;
-        // Note: Number keys 1-0 are reserved for Quick Access in Advanced Mode
         default:
             QDialog::keyPressEvent(event);
     }
@@ -2214,11 +2259,15 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
 <tr><td><span class='key'>Esc</span></td><td>Close dialog</td></tr>
 <tr><td>File List button</td><td>Open file list window (multi-select, right-click to assign)</td></tr>
+<tr><td><span class='key'>F</span></td><td>Open File List window (multi-select, filter, assign)</td></tr>
+<tr><td><span class='key'>Ctrl+F</span></td><td>Focus search box</td></tr>
 <tr><td><span class='key'>!</span> button</td><td>View and manage duplicate files (when detected)</td></tr>
 <tr class='section'><td colspan='2'>Advanced / AI Mode</td></tr>
 <tr><td><span class='key'>K</span></td><td>Keep file</td></tr>
 <tr><td><span class='key'>1</span>-<span class='key'>0</span></td><td>Move file to Quick Access folder 1-10</td></tr>
 <tr><td>Click grid folder</td><td>Move file to that folder</td></tr>
+<tr><td><span class='key'>Tab</span></td><td>Enter grid keyboard navigation (arrows to move, Space to assign, Esc to exit)</td></tr>
+<tr><td><span class='key'>N</span></td><td>Add new folder to grid</td></tr>
 <tr><td>A-Z / # buttons</td><td>Sort grid alphabetically / by file count</td></tr>
 <tr><td>Full Paths toggle</td><td>Show folder path structure in grid buttons</td></tr>
 <tr><td>Width spinner</td><td>Adjust grid button width (80-300px)</td></tr>

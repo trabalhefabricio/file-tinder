@@ -72,6 +72,14 @@ public:
             path_indicator_->setStyleSheet(
                 "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
             );
+            
+            // Check for resumable session
+            int progress = db_manager_.get_session_pending_count(last_folder);
+            if (progress > 0 && resume_label_) {
+                resume_label_->setText(QString("Session in progress: %1 files sorted. Click a mode to resume.")
+                    .arg(progress));
+                resume_label_->setVisible(true);
+            }
         }
     }
     
@@ -80,6 +88,7 @@ private:
     QString chosen_path_;
     QLabel* path_indicator_;
     QListWidget* recent_list_ = nullptr;
+    QLabel* resume_label_ = nullptr;
     bool skip_stats_on_next_launch_ = false;  // Skip stats dashboard on mode switch
     bool is_dark_theme_ = true;
     
@@ -211,6 +220,14 @@ private:
         
         root_layout->addStretch();
         
+        // Resume session indicator
+        resume_label_ = new QLabel();
+        resume_label_->setStyleSheet(
+            "padding: 8px 12px; background-color: #1a3a4a; border: 1px solid #2980b9; "
+            "color: #3498db; font-size: 11px; border-radius: 4px;");
+        resume_label_->setVisible(false);
+        root_layout->addWidget(resume_label_);
+        
         // Mode buttons
         auto* modes_label = new QLabel("Choose mode:");
         modes_label->setStyleSheet("font-weight: bold; font-size: 12px;");
@@ -295,7 +312,7 @@ private:
         root_layout->addLayout(tools_row);
         
         // Hotkey hint
-        auto* hint_text = new QLabel("Keys: Left=Delete | Down=Skip | Up=Back | Z=Undo | Basic: Right=Keep | Advanced/AI: K=Keep, 1-0=Quick Access");
+        auto* hint_text = new QLabel("Keys: Left=Delete | Down=Skip | Z=Undo | F=File List | Basic: Right=Keep | Advanced/AI: K=Keep, 1-0=Quick Access, Tab=Grid Nav");
         hint_text->setStyleSheet("color: #666666; font-size: 10px; padding-top: 8px;");
         hint_text->setAlignment(Qt::AlignCenter);
         hint_text->setWordWrap(true);

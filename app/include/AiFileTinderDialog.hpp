@@ -141,6 +141,14 @@ private:
     QLabel* ai_reasoning_label_ = nullptr;
     int confidence_threshold_ = 0;
 
+    // AI correction tracking — records when user overrides AI suggestion
+    struct AiCorrection {
+        int file_index;
+        QString ai_suggested;   // AI's top suggestion
+        QString user_chose;     // What the user actually picked
+    };
+    std::vector<AiCorrection> corrections_;
+
     // Show AI setup dialog; returns false if user cancelled
     bool show_ai_setup();
 

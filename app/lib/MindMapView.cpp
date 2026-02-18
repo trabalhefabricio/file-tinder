@@ -73,6 +73,16 @@ void FolderButton::update_style() {
             "border-radius: 4px; color: #3498db; font-weight: bold; font-size: 10px; }"
             "QPushButton:hover { background-color: #1e4a6e; }"
         );
+    } else if (!node_->custom_color.isEmpty()) {
+        // User-assigned custom color
+        QColor c(node_->custom_color);
+        QColor bg = c.darker(300);
+        setStyleSheet(QString(
+            "QPushButton { text-align: center; padding: 2px 6px; "
+            "background-color: %1; border: 1px solid %2; "
+            "border-radius: 4px; color: %2; font-size: 10px; }"
+            "QPushButton:hover { background-color: %3; }"
+        ).arg(bg.name(), c.name(), bg.lighter(120).name()));
     } else if (!node_->exists) {
         setStyleSheet(
             "QPushButton { text-align: center; padding: 2px 6px; "

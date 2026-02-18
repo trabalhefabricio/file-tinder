@@ -611,15 +611,51 @@ void AiFileTinderDialog::initialize() {
                     "Please click 'AI Setup' first to configure the AI provider.");
                 return;
             }
-            auto reply = QMessageBox::question(this, "Re-run AI",
-                "Re-analyze which files?\n\n"
-                "Yes -- Remaining unsorted files only\n"
-                "No -- All files (overwrite existing decisions)",
-                QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel,
-                QMessageBox::Yes);
-            if (reply == QMessageBox::Cancel) return;
-            bool remaining_only = (reply == QMessageBox::Yes);
-            run_ai_analysis(remaining_only);
+            QMenu menu;
+            auto* remaining_action = menu.addAction("Remaining unsorted files only");
+            auto* all_action = menu.addAction("All files (overwrite existing decisions)");
+            menu.addSeparator();
+            auto* recat_action = menu.addAction("Re-categorize (re-sort based on changed folders)");
+            recat_action->setToolTip("Re-analyze already-sorted files that might better fit new/changed categories");
+
+            auto* chosen = menu.exec(rerun_ai_btn_->mapToGlobal(QPoint(0, rerun_ai_btn_->height())));
+            if (!chosen) return;
+
+            if (chosen == remaining_action) {
+                run_ai_analysis(true);
+            } else if (chosen == all_action) {
+                run_ai_analysis(false);
+            } else if (chosen == recat_action) {
+                // Re-categorize: re-analyze files that are already "move" decisions
+                // to see if new/changed folders are a better fit
+                int moved_count = 0;
+                for (auto& f : files_) {
+                    if (f.decision == "move") moved_count++;
+                }
+                if (moved_count == 0) {
+                    QMessageBox::information(this, "No Sorted Files",
+                        "No files are currently sorted. Use 'Remaining unsorted' instead.");
+                    return;
+                }
+                auto reply = QMessageBox::question(this, "Re-categorize",
+                    QString("Re-analyze %1 already-sorted files against the current folder structure?\n\n"
+                            "Files may be moved to different/new folders if the AI finds a better fit.")
+                        .arg(moved_count),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                if (reply == QMessageBox::Yes) {
+                    // Reset moved files to pending so they get re-analyzed
+                    for (auto& f : files_) {
+                        if (f.decision == "move") {
+                            if (folder_model_) folder_model_->unassign_file_from_folder(f.destination_folder);
+                            f.decision = "pending";
+                            f.destination_folder.clear();
+                            move_count_--;
+                        }
+                    }
+                    update_stats();
+                    run_ai_analysis(true);
+                }
+            }
         });
 
         if (main_layout->count() > 0) {
@@ -1128,6 +1164,23 @@ QString AiFileTinderDialog::build_analysis_prompt(const QStringList& file_descri
     prompt += "New folder paths MUST be under the source folder root.\n";
     prompt += "IMPORTANT: Use spaces in folder names, not underscores or camelCase. Example: 'Audio Plugins' not 'Audio_Plugins'.\n\n";
 
+    // Include correction feedback if we have any (learning from user overrides)
+    if (!corrections_.empty()) {
+        prompt += "USER FEEDBACK from previous sorting (learn from these corrections):\n";
+        int shown = 0;
+        for (const auto& c : corrections_) {
+            if (shown >= 10) break;  // Limit context size
+            if (c.file_index >= 0 && c.file_index < static_cast<int>(files_.size())) {
+                prompt += QString("  - File '%1': AI suggested '%2' but user chose '%3'\n")
+                    .arg(files_[c.file_index].name,
+                         QFileInfo(c.ai_suggested).fileName(),
+                         QFileInfo(c.user_chose).fileName());
+                ++shown;
+            }
+        }
+        prompt += "\n";
+    }
+
     prompt += "Files (format: index|name|extension|size_bytes|mime_type):\n";
     for (const QString& desc : file_descriptions) {
         prompt += desc + "\n";
@@ -1516,6 +1569,24 @@ void AiFileTinderDialog::clear_folder_highlights() {
 void AiFileTinderDialog::on_folder_clicked_from_ai(const QString& folder_path) {
     int file_idx = get_current_file_index();
     if (file_idx < 0 || file_idx >= static_cast<int>(files_.size())) return;
+
+    // Track AI correction — if user chose a different folder than AI's top suggestion
+    if (sort_mode_ == AiSortMode::Semi) {
+        for (const auto& s : suggestions_) {
+            if (s.file_index == file_idx && !s.suggested_folders.isEmpty()) {
+                if (s.suggested_folders.first() != folder_path) {
+                    AiCorrection correction;
+                    correction.file_index = file_idx;
+                    correction.ai_suggested = s.suggested_folders.first();
+                    correction.user_chose = folder_path;
+                    corrections_.push_back(correction);
+                    LOG_INFO("AIMode", QString("Correction: file %1, AI suggested '%2', user chose '%3'")
+                        .arg(file_idx).arg(s.suggested_folders.first(), folder_path));
+                }
+                break;
+            }
+        }
+    }
 
     auto& file = files_[file_idx];
     QString old_decision = file.decision;

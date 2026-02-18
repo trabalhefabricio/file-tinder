@@ -298,6 +298,44 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     connect(reset_grid_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::reset_grid);
     grid_toolbar->addWidget(reset_grid_btn);
     
+    auto* presets_btn = new QPushButton("Presets");
+    presets_btn->setMaximumWidth(55);
+    presets_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; color: #f39c12; }");
+    presets_btn->setToolTip("Load a template grid preset");
+    connect(presets_btn, &QPushButton::clicked, this, [this, presets_btn]() {
+        QMenu menu;
+        auto add_preset = [&](const QString& name, const QStringList& folders) {
+            menu.addAction(name, [this, name, folders]() {
+                auto reply = QMessageBox::question(this, "Load Preset",
+                    QString("Load the '%1' template?\nThis will replace the current grid folders.").arg(name),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                if (reply != QMessageBox::Yes) return;
+                if (folder_model_) {
+                    QStringList current = folder_model_->get_all_folder_paths();
+                    folder_model_->blockSignals(true);
+                    for (int i = current.size() - 1; i >= 0; --i)
+                        folder_model_->remove_folder(current[i]);
+                    for (const QString& f : folders)
+                        folder_model_->add_folder(source_folder_ + "/" + f, true);
+                    folder_model_->blockSignals(false);
+                }
+                if (mind_map_view_) mind_map_view_->refresh_layout();
+            });
+        };
+        add_preset("Downloads Cleanup", {"Documents", "Images", "Videos", "Music",
+            "Archives", "Installers", "Other"});
+        add_preset("Photo Organization", {"Portraits", "Landscapes", "Events",
+            "Screenshots", "Edits", "Raw Files", "Exports"});
+        add_preset("Development Project", {"Source", "Assets", "Build", "Docs",
+            "Config", "Tests", "Scripts", "Dependencies"});
+        add_preset("Music Library", {"Albums", "Singles", "Podcasts", "Sound Effects",
+            "Samples", "Stems", "Mixes"});
+        add_preset("Document Archive", {"Financial", "Legal", "Personal", "Work",
+            "Medical", "Education", "Reference"});
+        menu.exec(presets_btn->mapToGlobal(QPoint(0, presets_btn->height())));
+    });
+    grid_toolbar->addWidget(presets_btn);
+    
     map_layout->addLayout(grid_toolbar);
     
     mind_map_view_ = new MindMapView();
@@ -360,10 +398,15 @@ void AdvancedFileTinderDialog::setup_file_info_panel() {
     adv_preview_label_->setVisible(false);
     info_layout->addWidget(adv_preview_label_);
     
-    // Progress
+    // Progress — circular style for advanced/AI modes
     progress_bar_ = new QProgressBar();
     progress_bar_->setMaximumWidth(150);
+    progress_bar_->setMaximumHeight(20);
     progress_bar_->setTextVisible(true);
+    progress_bar_->setStyleSheet(
+        "QProgressBar { border: 2px solid #34495e; border-radius: 10px; "
+        "text-align: center; background: #2c3e50; color: #ecf0f1; font-size: 10px; }"
+        "QProgressBar::chunk { background-color: #27ae60; border-radius: 8px; }");
     info_layout->addWidget(progress_bar_);
     
     static_cast<QVBoxLayout*>(layout())->addWidget(file_info_panel_);
@@ -689,6 +732,31 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
             if (mind_map_view_) mind_map_view_->refresh_layout();
         }
     });
+    
+    // Color coding
+    if (folder_model_ && folder_path != source_folder_) {
+        QMenu* color_menu = menu.addMenu("Set Color");
+        auto add_color = [this, folder_path, color_menu](const QString& label, const QString& hex) {
+            auto* action = color_menu->addAction(label);
+            connect(action, &QAction::triggered, this, [this, folder_path, hex]() {
+                if (folder_model_) {
+                    FolderNode* node = folder_model_->find_node(folder_path);
+                    if (node) {
+                        node->custom_color = hex;
+                        if (mind_map_view_) mind_map_view_->refresh_layout();
+                    }
+                }
+            });
+        };
+        add_color("Default", "");
+        add_color("Red", "#e74c3c");
+        add_color("Green", "#2ecc71");
+        add_color("Blue", "#3498db");
+        add_color("Orange", "#f39c12");
+        add_color("Purple", "#9b59b6");
+        add_color("Cyan", "#1abc9c");
+        add_color("Pink", "#e91e63");
+    }
     
     if (folder_model_) {
         FolderNode* node = folder_model_->find_node(folder_path);
