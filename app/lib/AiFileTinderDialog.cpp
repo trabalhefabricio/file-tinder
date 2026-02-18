@@ -1076,6 +1076,7 @@ QString AiFileTinderDialog::send_api_request(const QString& prompt, QString& err
             int retry_after = 5;
             QByteArray retry_hdr = reply->rawHeader("Retry-After");
             if (!retry_hdr.isEmpty()) retry_after = qMax(retry_hdr.toInt(), 1);
+            // Exponential backoff: retry_after * 2^attempt, capped at 120s
             int backoff_secs = qMin(retry_after * (1 << attempt), 120);
             reply->deleteLater();
 
@@ -1097,8 +1098,8 @@ QString AiFileTinderDialog::send_api_request(const QString& prompt, QString& err
             return {};
         }
 
-        // Success — reset 429 counter
-        consecutive_429s_ = 0;
+        // Success — decay 429 counter (gradual recovery instead of hard reset)
+        if (consecutive_429s_ > 0) consecutive_429s_--;
 
         QByteArray response_data = reply->readAll();
         reply->deleteLater();
