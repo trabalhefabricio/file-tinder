@@ -25,6 +25,8 @@ set(SOURCES
     app/lib/FilterWidget.cpp
     app/lib/ImagePreviewWindow.cpp
     app/lib/AiFileTinderDialog.cpp
+    app/lib/FileListWindow.cpp
+    app/lib/DuplicateDetectionWindow.cpp
 )
 
 # Header files
@@ -42,6 +44,8 @@ set(HEADERS
     app/include/FilterWidget.hpp
     app/include/ImagePreviewWindow.hpp
     app/include/AiFileTinderDialog.hpp
+    app/include/FileListWindow.hpp
+    app/include/DuplicateDetectionWindow.hpp
 )
 
 # Resources

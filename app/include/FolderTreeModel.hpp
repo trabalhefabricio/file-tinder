@@ -77,6 +77,10 @@ public:
     QModelIndex index_for_path(const QString& path) const;
     FolderNode* root_node() const { return root_.get(); }
     
+    // Sorting
+    void sort_children_alphabetically(FolderNode* node);
+    void sort_children_by_count(FolderNode* node);
+    
     // Persistence
     void load_from_database(DatabaseManager& db, const QString& session_folder);
     void save_to_database(DatabaseManager& db, const QString& session_folder);

@@ -249,6 +249,18 @@ void AiSetupDialog::build_ui() {
 
     main_layout->addWidget(purpose_group);
 
+    // ── Confidence threshold (optional) ──
+    auto* conf_row = new QHBoxLayout();
+    conf_row->addWidget(new QLabel("Min. confidence threshold:"));
+    confidence_spin_ = new QSpinBox();
+    confidence_spin_->setRange(0, 90);
+    confidence_spin_->setValue(0);
+    confidence_spin_->setSuffix("%");
+    confidence_spin_->setToolTip("Set to 0 to show all suggestions. Higher values filter out low-confidence results.");
+    conf_row->addWidget(confidence_spin_);
+    conf_row->addStretch();
+    main_layout->addLayout(conf_row);
+
     // ── Cost estimate ──
     cost_label_ = new QLabel("");
     cost_label_->setStyleSheet("color: #f39c12; font-size: 11px;");
@@ -516,6 +528,10 @@ AiProviderConfig AiSetupDialog::provider_config() const {
     return cfg;
 }
 
+int AiSetupDialog::confidence_threshold() const {
+    return confidence_spin_->value();
+}
+
 // ============================================================
 // AiFileTinderDialog
 // ============================================================
@@ -653,6 +669,19 @@ void AiFileTinderDialog::initialize() {
         } else {
             main_layout->addWidget(ai_suggestions_panel_);
         }
+
+        // AI Reasoning label — shows why the AI picked these folders
+        ai_reasoning_label_ = new QLabel();
+        ai_reasoning_label_->setStyleSheet(
+            "color: #95a5a6; font-size: 10px; padding: 4px 8px; "
+            "background-color: #2c3e50; border-radius: 3px;");
+        ai_reasoning_label_->setWordWrap(true);
+        ai_reasoning_label_->setVisible(false);
+        if (main_layout->count() > 2) {
+            main_layout->insertWidget(main_layout->count() - 2, ai_reasoning_label_);
+        } else {
+            main_layout->addWidget(ai_reasoning_label_);
+        }
     }
 }
 
@@ -674,6 +703,7 @@ bool AiFileTinderDialog::show_ai_setup() {
     category_depth_ = setup.category_depth();
     folder_purpose_ = setup.folder_purpose();
     provider_config_ = setup.provider_config();
+    confidence_threshold_ = setup.confidence_threshold();
 
     // Validate: KeepExisting with empty grid is incompatible
     QStringList existing = folder_model_ ? folder_model_->get_all_folder_paths() : QStringList();
@@ -1104,8 +1134,9 @@ QString AiFileTinderDialog::build_analysis_prompt(const QStringList& file_descri
     }
 
     prompt += "\nRespond with ONLY a JSON array. Each element:\n";
-    prompt += "  {\"i\": <file_index>, \"f\": [\"<full_folder_path>\", ...], \"r\": \"<short_reasoning>\"}\n";
-    prompt += "Example: [{\"i\":0,\"f\":[\"" + source_folder_ + "/Images\"],\"r\":\"JPEG photo\"}]\n";
+    prompt += "  {\"i\": <file_index>, \"f\": [\"<full_folder_path>\", ...], \"c\": [<confidence_pct>, ...], \"r\": \"<short_reasoning>\"}\n";
+    prompt += "Where \"c\" is an array of confidence percentages (0-100) matching each folder in \"f\".\n";
+    prompt += "Example: [{\"i\":0,\"f\":[\"" + source_folder_ + "/Images\"],\"c\":[92],\"r\":\"JPEG photo\"}]\n";
     prompt += "Return ONLY the JSON array, no markdown, no explanation.\n";
 
     return prompt;
@@ -1268,24 +1299,39 @@ std::vector<AiFileSuggestion> AiFileTinderDialog::parse_ai_response(
 
     std::vector<AiFileSuggestion> results;
 
+    auto parse_suggestion = [this](const QJsonObject& obj) -> AiFileSuggestion {
+        AiFileSuggestion s;
+        s.file_index = obj["i"].toInt(-1);
+        if (s.file_index < 0 || s.file_index >= static_cast<int>(files_.size())) {
+            s.file_index = -1;
+            return s;
+        }
+        QJsonArray folders = obj["f"].toArray();
+        for (const QJsonValue& fv : folders) {
+            QString folder = fv.toString();
+            if (!folder.isEmpty()) s.suggested_folders.append(folder);
+        }
+        // Parse confidence scores (optional)
+        QJsonArray conf_arr = obj["c"].toArray();
+        for (const QJsonValue& cv : conf_arr) {
+            s.confidence_scores.append(qBound(0, cv.toInt(50), 100));
+        }
+        // Pad confidence to match folder count if fewer provided
+        while (s.confidence_scores.size() < s.suggested_folders.size()) {
+            s.confidence_scores.append(50);
+        }
+        s.reasoning = obj["r"].toString();
+        return s;
+    };
+
     // Level 1: Try full JSON parse
     QJsonDocument doc = QJsonDocument::fromJson(response.toUtf8());
     if (doc.isArray()) {
         QJsonArray arr = doc.array();
         for (const QJsonValue& val : arr) {
-            QJsonObject obj = val.toObject();
-            AiFileSuggestion s;
-            s.file_index = obj["i"].toInt(-1);
-            if (s.file_index < 0 || s.file_index >= static_cast<int>(files_.size())) continue;
-
-            QJsonArray folders = obj["f"].toArray();
-            for (const QJsonValue& fv : folders) {
-                QString folder = fv.toString();
-                if (!folder.isEmpty()) s.suggested_folders.append(folder);
-            }
-            s.reasoning = obj["r"].toString();
-
-            if (!s.suggested_folders.isEmpty()) results.push_back(s);
+            auto s = parse_suggestion(val.toObject());
+            if (s.file_index >= 0 && !s.suggested_folders.isEmpty())
+                results.push_back(s);
         }
         if (!results.empty()) return results;
     }
@@ -1299,19 +1345,9 @@ std::vector<AiFileSuggestion> AiFileTinderDialog::parse_ai_response(
         if (doc.isArray()) {
             QJsonArray arr = doc.array();
             for (const QJsonValue& val : arr) {
-                QJsonObject obj = val.toObject();
-                AiFileSuggestion s;
-                s.file_index = obj["i"].toInt(-1);
-                if (s.file_index < 0 || s.file_index >= static_cast<int>(files_.size())) continue;
-
-                QJsonArray folders = obj["f"].toArray();
-                for (const QJsonValue& fv : folders) {
-                    QString folder = fv.toString();
-                    if (!folder.isEmpty()) s.suggested_folders.append(folder);
-                }
-                s.reasoning = obj["r"].toString();
-
-                if (!s.suggested_folders.isEmpty()) results.push_back(s);
+                auto s = parse_suggestion(val.toObject());
+                if (s.file_index >= 0 && !s.suggested_folders.isEmpty())
+                    results.push_back(s);
             }
             if (!results.empty()) return results;
         }
@@ -1327,19 +1363,9 @@ std::vector<AiFileSuggestion> AiFileTinderDialog::parse_ai_response(
         QJsonDocument line_doc = QJsonDocument::fromJson(trimmed.toUtf8());
         if (!line_doc.isObject()) continue;
 
-        QJsonObject obj = line_doc.object();
-        AiFileSuggestion s;
-        s.file_index = obj["i"].toInt(-1);
-        if (s.file_index < 0 || s.file_index >= static_cast<int>(files_.size())) continue;
-
-        QJsonArray folders = obj["f"].toArray();
-        for (const QJsonValue& fv : folders) {
-            QString folder = fv.toString();
-            if (!folder.isEmpty()) s.suggested_folders.append(folder);
-        }
-        s.reasoning = obj["r"].toString();
-
-        if (!s.suggested_folders.isEmpty()) results.push_back(s);
+        auto s = parse_suggestion(line_doc.object());
+        if (s.file_index >= 0 && !s.suggested_folders.isEmpty())
+            results.push_back(s);
     }
 
     if (!results.empty()) {
@@ -1414,6 +1440,32 @@ void AiFileTinderDialog::show_current_file() {
             for (const auto& s : suggestions_) {
                 if (s.file_index == file_idx) {
                     highlight_suggested_folders(s.suggested_folders);
+                    // Show reasoning
+                    if (ai_reasoning_label_) {
+                        if (!s.reasoning.isEmpty()) {
+                            ai_reasoning_label_->setText("AI: " + s.reasoning);
+                            ai_reasoning_label_->setVisible(true);
+                        } else {
+                            ai_reasoning_label_->setVisible(false);
+                        }
+                    }
+                    // Show confidence scores on suggestions list items
+                    if (ai_suggestions_list_ && !s.confidence_scores.isEmpty()) {
+                        for (int i = 0; i < ai_suggestions_list_->count() && i < s.confidence_scores.size(); ++i) {
+                            auto* item = ai_suggestions_list_->item(i);
+                            if (!item) continue;
+                            int conf = s.confidence_scores[i];
+                            // Skip suggestions below threshold
+                            if (confidence_threshold_ > 0 && conf < confidence_threshold_) {
+                                item->setHidden(true);
+                                continue;
+                            }
+                            // Color by confidence: green >80, yellow 50-80, red <50
+                            QString color = conf >= 80 ? "#2ecc71" : (conf >= 50 ? "#f1c40f" : "#e74c3c");
+                            item->setText(item->text() + QString(" %1%").arg(conf));
+                            item->setForeground(QColor(color));
+                        }
+                    }
                     break;
                 }
             }
@@ -1455,6 +1507,9 @@ void AiFileTinderDialog::clear_folder_highlights() {
     }
     if (ai_suggestions_panel_) {
         ai_suggestions_panel_->setVisible(false);
+    }
+    if (ai_reasoning_label_) {
+        ai_reasoning_label_->setVisible(false);
     }
 }
 

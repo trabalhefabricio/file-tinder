@@ -193,6 +193,15 @@ void MindMapView::refresh_layout() {
     
     // Set the new content widget
     scroll_area_->setWidget(content_widget_);
+
+    // Rebuild keyboard navigation order if in keyboard mode
+    if (keyboard_mode_) {
+        build_ordered_paths();
+        if (focused_index_ >= ordered_paths_.size()) {
+            focused_index_ = ordered_paths_.isEmpty() ? -1 : 0;
+        }
+        update_focus_visual();
+    }
 }
 
 void MindMapView::build_grid() {
@@ -327,4 +336,145 @@ void MindMapView::dropEvent(QDropEvent* event) {
     }
     
     event->acceptProposedAction();
+}
+
+void MindMapView::sort_alphabetically() {
+    if (!model_ || !model_->root_node()) return;
+    model_->sort_children_alphabetically(model_->root_node());
+    refresh_layout();
+}
+
+void MindMapView::sort_by_count() {
+    if (!model_ || !model_->root_node()) return;
+    model_->sort_children_by_count(model_->root_node());
+    refresh_layout();
+}
+
+void MindMapView::set_keyboard_mode(bool on) {
+    keyboard_mode_ = on;
+    if (on) {
+        build_ordered_paths();
+        if (!ordered_paths_.isEmpty() && focused_index_ < 0) {
+            focused_index_ = 0;
+        }
+        update_focus_visual();
+    } else {
+        focused_index_ = -1;
+        // Clear focus ring from all buttons
+        for (auto it = buttons_.begin(); it != buttons_.end(); ++it) {
+            it.value()->set_selected(false);
+        }
+    }
+}
+
+void MindMapView::build_ordered_paths() {
+    // Build a list of folder paths in grid order (column-major: col 1 top to bottom, then col 2, etc.)
+    // Skip the root (col 0) — it's not a sorting target
+    ordered_paths_.clear();
+
+    // Collect (col, row, path) tuples
+    QList<std::tuple<int, int, QString>> entries;
+    for (auto it = grid_positions_.begin(); it != grid_positions_.end(); ++it) {
+        int row = it.value().first;
+        int col = it.value().second;
+        if (col == 0) continue;  // Skip root
+        entries.append({col, row, it.key()});
+    }
+
+    // Sort by column first, then row
+    std::sort(entries.begin(), entries.end());
+
+    for (const auto& [col, row, path] : entries) {
+        ordered_paths_.append(path);
+    }
+}
+
+void MindMapView::update_focus_visual() {
+    if (!keyboard_mode_) return;
+
+    for (auto it = buttons_.begin(); it != buttons_.end(); ++it) {
+        it.value()->set_selected(false);
+    }
+
+    if (focused_index_ >= 0 && focused_index_ < ordered_paths_.size()) {
+        QString path = ordered_paths_[focused_index_];
+        if (buttons_.contains(path)) {
+            buttons_[path]->set_selected(true);
+            // Ensure the focused button is visible in the scroll area
+            buttons_[path]->ensurePolished();
+            scroll_area_->ensureWidgetVisible(buttons_[path]);
+        }
+    }
+}
+
+void MindMapView::focus_next() {
+    if (ordered_paths_.isEmpty()) return;
+    focused_index_ = (focused_index_ + 1) % ordered_paths_.size();
+    update_focus_visual();
+}
+
+void MindMapView::focus_prev() {
+    if (ordered_paths_.isEmpty()) return;
+    focused_index_--;
+    if (focused_index_ < 0) focused_index_ = ordered_paths_.size() - 1;
+    update_focus_visual();
+}
+
+void MindMapView::focus_up() {
+    if (ordered_paths_.isEmpty() || focused_index_ < 0) return;
+    // Move up one row within the same column
+    QString current = ordered_paths_[focused_index_];
+    if (!grid_positions_.contains(current)) return;
+    auto pos = grid_positions_[current];
+    int target_row = pos.first - 1;
+    int target_col = pos.second;
+
+    // Find the button at (target_row, target_col)
+    for (int i = 0; i < ordered_paths_.size(); ++i) {
+        if (grid_positions_.contains(ordered_paths_[i])) {
+            auto p = grid_positions_[ordered_paths_[i]];
+            if (p.first == target_row && p.second == target_col) {
+                focused_index_ = i;
+                update_focus_visual();
+                return;
+            }
+        }
+    }
+    // If no button above, wrap to bottom of previous column
+    focus_prev();
+}
+
+void MindMapView::focus_down() {
+    if (ordered_paths_.isEmpty() || focused_index_ < 0) return;
+    QString current = ordered_paths_[focused_index_];
+    if (!grid_positions_.contains(current)) return;
+    auto pos = grid_positions_[current];
+    int target_row = pos.first + 1;
+    int target_col = pos.second;
+
+    for (int i = 0; i < ordered_paths_.size(); ++i) {
+        if (grid_positions_.contains(ordered_paths_[i])) {
+            auto p = grid_positions_[ordered_paths_[i]];
+            if (p.first == target_row && p.second == target_col) {
+                focused_index_ = i;
+                update_focus_visual();
+                return;
+            }
+        }
+    }
+    // If no button below, wrap to next
+    focus_next();
+}
+
+void MindMapView::activate_focused() {
+    if (focused_index_ >= 0 && focused_index_ < ordered_paths_.size()) {
+        emit folder_clicked(ordered_paths_[focused_index_]);
+    }
+}
+
+QString MindMapView::focused_folder_path() const {
+    if (focused_index_ >= 0 && focused_index_ < ordered_paths_.size()) {
+        return ordered_paths_[focused_index_];
+    }
+    return {};
 }

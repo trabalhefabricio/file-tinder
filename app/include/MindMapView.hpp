@@ -98,6 +98,25 @@ public:
     bool show_full_paths() const { return show_full_paths_; }
     void set_custom_width(int w) { custom_width_ = w; }
     int custom_width() const { return custom_width_; }
+    void sort_alphabetically();
+    void sort_by_count();
+
+    // Keyboard navigation
+    void set_keyboard_mode(bool on);
+    bool keyboard_mode() const { return keyboard_mode_; }
+    void focus_next();
+    void focus_prev();
+    void focus_up();
+    void focus_down();
+    void activate_focused();  // Emits folder_clicked for the focused button
+    QString focused_folder_path() const;
+
+private:
+    bool keyboard_mode_ = false;
+    int focused_index_ = -1;       // Index into ordered_paths_
+    QStringList ordered_paths_;     // Paths in grid order (row-major by column)
+    void update_focus_visual();
+    void build_ordered_paths();
 };
 
 #endif // MIND_MAP_VIEW_HPP

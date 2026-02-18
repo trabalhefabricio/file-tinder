@@ -1,0 +1,148 @@
+FILE SYSTEM TRACKING PROPOSAL
+==============================
+
+This proposal describes how File Tinder can evolve from a per-session file organizer
+into a persistent, learning file system tracker that progressively improves organization.
+
+
+I. CORE CONCEPT
+================
+
+File Tinder becomes a "File System Memory" — it remembers every file it has organized,
+every user decision, and uses this history to get progressively smarter. Instead of
+starting fresh each session, it maintains a comprehensive view of the user's file system
+that grows over time.
+
+
+II. DATABASE SCHEMA
+====================
+
+1. file_registry — Master file catalog
+   - file_hash (SHA-256, primary key)
+   - original_path (where first encountered)
+   - current_path (last known location)
+   - file_name, extension, size, mime_type
+   - identity (what the AI determined this file IS)
+   - first_seen, last_seen timestamps
+   - times_moved (how often this file has been relocated)
+
+2. organization_history — Decision log across sessions
+   - session_id, timestamp
+   - file_hash → file_registry
+   - action (keep/move/delete/copy)
+   - source_path, dest_path
+   - was_ai_suggested (bool)
+   - user_overrode_ai (bool)
+   - ai_suggestion_before_override
+
+3. category_evolution — How folder structures change over time
+   - root_path (which organized folder)
+   - version_number
+   - folder_structure (JSON snapshot)
+   - timestamp
+   - reason (user/AI/auto-cleanup)
+
+4. user_patterns — Learned preferences
+   - pattern_type (file_type_routing, naming_convention, time_preference)
+   - pattern_data (JSON)
+   - confidence, sample_count
+   - last_updated
+
+
+III. KEY FEATURES
+==================
+
+A. Progressive Learning
+   - After each session, analyze decisions to extract patterns
+   - "User always puts .vst3 files in Audio/Plugins"
+   - "User separates work PDFs from personal PDFs by content keywords"
+   - Feed patterns back into AI prompts for future sessions
+
+B. File System Scan & Sync
+   - Periodic or on-demand scan of tracked directories
+   - Detect files that appeared since last session
+   - Flag files that moved or were deleted externally
+   - Show a "What's New" dashboard on launcher
+
+C. Organization Health Score
+   - Score from 0-100 for each tracked directory
+   - Factors: % files categorized, depth consistency, naming conventions,
+     duplicate ratio, orphaned files
+   - Trend over time: "Your Downloads went from 35 to 87 this month"
+
+D. Smart Re-categorization
+   - When user changes category structure (renames/merges folders),
+     File Tinder understands the intent and can suggest moving existing
+     files to better-fit the new structure
+   - AI analyzes old vs new categories and proposes bulk moves
+   - User reviews a diff-style view before confirming
+
+E. Cross-Session Intelligence
+   - "Last time you organized Downloads, you created 'Work Projects'.
+     These 12 new files look similar — want to send them there?"
+   - Pre-populate AI context with historical decisions for the same directory
+   - Show a "Previously here" indicator for files that have been moved before
+
+F. Folder Health Dashboard
+   - Per-directory view showing:
+     * Total files, categorized %, average age
+     * Most active categories (by recent additions)
+     * Stale categories (no new files in 30+ days)
+     * Suggested merges (two folders with similar content)
+     * Duplicate report
+
+
+IV. USER EXPERIENCE FLOW
+==========================
+
+1. First time: User organizes Downloads → File Tinder remembers everything
+2. A week later: User opens Downloads again → "15 new files since last session"
+3. AI pre-suggests categories based on past decisions (80% accuracy)
+4. User confirms/corrects → feedback loop strengthens patterns
+5. After a month: Organization Health Score displayed on launcher
+6. User can view a "My File System" map showing all tracked directories
+
+
+V. IMPLEMENTATION PHASES
+==========================
+
+Phase 1 (Foundation):
+  - file_registry table + basic tracking during normal sessions
+  - "New since last session" indicator on launcher
+  - Store AI decisions with override tracking
+
+Phase 2 (Learning):
+  - Pattern extraction from decision history
+  - Feed patterns into AI prompts ("User preference context")
+  - Basic Organization Health Score
+
+Phase 3 (Intelligence):
+  - Smart re-categorization when folder structure changes
+  - Cross-session suggestions ("Previously you sorted similar files to...")
+  - Folder Health Dashboard
+
+Phase 4 (Full System):
+  - Multi-directory tracking and cross-directory intelligence
+  - Periodic background scan option
+  - Historical trend charts
+  - Export/import of learned patterns between machines
+
+
+VI. TECHNICAL CONSIDERATIONS
+==============================
+
+- File hashing: Use SHA-256 for content identification but cache hashes to avoid
+  re-computing on every scan. Only re-hash if size or modified date changed.
+
+- Privacy: All data stays local. No cloud sync of file registry.
+  User can delete tracking data for specific directories.
+
+- Performance: Incremental scanning only — compare file list + timestamps against
+  registry, only process changes. For large directories (>10k files), use a
+  background thread with progress reporting.
+
+- Storage: SQLite is sufficient for tracking up to ~1M files. Estimated DB size:
+  ~200MB for 1M file entries with full history.
+
+- Migration: Existing session data auto-populates the file registry on first scan
+  after the feature is enabled.

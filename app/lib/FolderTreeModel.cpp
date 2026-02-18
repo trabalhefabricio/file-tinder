@@ -442,3 +442,27 @@ void FolderTreeModel::save_to_database(DatabaseManager& db, const QString& sessi
     };
     save_recursive(root_.get());
 }
+
+void FolderTreeModel::sort_children_alphabetically(FolderNode* node) {
+    if (!node) return;
+    std::sort(node->children.begin(), node->children.end(),
+        [](const std::unique_ptr<FolderNode>& a, const std::unique_ptr<FolderNode>& b) {
+            return a->display_name.toLower() < b->display_name.toLower();
+        });
+    for (auto& child : node->children) {
+        sort_children_alphabetically(child.get());
+    }
+    emit folder_structure_changed();
+}
+
+void FolderTreeModel::sort_children_by_count(FolderNode* node) {
+    if (!node) return;
+    std::sort(node->children.begin(), node->children.end(),
+        [](const std::unique_ptr<FolderNode>& a, const std::unique_ptr<FolderNode>& b) {
+            return a->assigned_file_count > b->assigned_file_count;
+        });
+    for (auto& child : node->children) {
+        sort_children_by_count(child.get());
+    }
+    emit folder_structure_changed();
+}

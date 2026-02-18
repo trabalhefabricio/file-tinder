@@ -140,6 +140,7 @@ protected:
     QPushButton* finish_btn_;
     QPushButton* switch_mode_btn_;
     QPushButton* help_btn_;
+    QPushButton* duplicate_btn_ = nullptr;  // Duplicate detection ! button
     
     // Animation
     QPropertyAnimation* swipe_animation_;

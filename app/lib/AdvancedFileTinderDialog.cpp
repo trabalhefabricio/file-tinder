@@ -259,6 +259,25 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     });
     grid_toolbar->addWidget(width_spin);
     
+    // Grid sorting buttons
+    auto* sort_az_btn = new QPushButton("A-Z");
+    sort_az_btn->setMaximumWidth(35);
+    sort_az_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 4px; }");
+    sort_az_btn->setToolTip("Sort grid folders alphabetically");
+    connect(sort_az_btn, &QPushButton::clicked, this, [this]() {
+        if (mind_map_view_) mind_map_view_->sort_alphabetically();
+    });
+    grid_toolbar->addWidget(sort_az_btn);
+    
+    auto* sort_count_btn = new QPushButton("#");
+    sort_count_btn->setMaximumWidth(25);
+    sort_count_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 4px; }");
+    sort_count_btn->setToolTip("Sort grid folders by file count (most files first)");
+    connect(sort_count_btn, &QPushButton::clicked, this, [this]() {
+        if (mind_map_view_) mind_map_view_->sort_by_count();
+    });
+    grid_toolbar->addWidget(sort_count_btn);
+    
     grid_toolbar->addStretch();
     
     auto* save_cfg_btn = new QPushButton("Save Grid");
@@ -294,7 +313,7 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     map_layout->addWidget(mind_map_view_);
     
     // Hint label
-    auto* hint = new QLabel("Click folder to assign file. [+] to add. Right-click for options. K=Keep, D/←=Delete, S/↓=Skip, 1-0=Quick Access");
+    auto* hint = new QLabel("Click folder to assign file. [+] to add. Right-click for options. K=Keep, D=Delete, S=Skip, 1-0=Quick Access, Tab=Grid navigation");
     hint->setStyleSheet("color: #666; font-size: 10px;");
     hint->setWordWrap(true);
     map_layout->addWidget(hint);
@@ -1046,6 +1065,43 @@ void AdvancedFileTinderDialog::on_undo() {
 }
 
 void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
+    // If in grid keyboard navigation mode, handle grid navigation keys
+    if (mind_map_view_ && mind_map_view_->keyboard_mode()) {
+        switch (event->key()) {
+            case Qt::Key_Tab:
+            case Qt::Key_Right:
+                mind_map_view_->focus_next();
+                return;
+            case Qt::Key_Backtab:  // Shift+Tab
+            case Qt::Key_Left:
+                mind_map_view_->focus_prev();
+                return;
+            case Qt::Key_Up:
+                mind_map_view_->focus_up();
+                return;
+            case Qt::Key_Down:
+                mind_map_view_->focus_down();
+                return;
+            case Qt::Key_Space:
+            case Qt::Key_Return:
+            case Qt::Key_Enter:
+                mind_map_view_->activate_focused();
+                return;
+            case Qt::Key_Escape:
+                // Exit keyboard grid navigation mode
+                mind_map_view_->set_keyboard_mode(false);
+                return;
+            default:
+                break;
+        }
+    }
+
+    // Tab key enters grid keyboard navigation mode
+    if (event->key() == Qt::Key_Tab && mind_map_view_ && !mind_map_view_->keyboard_mode()) {
+        mind_map_view_->set_keyboard_mode(true);
+        return;
+    }
+
     // Number keys 1-9, 0 for quick access
     if (event->key() >= Qt::Key_1 && event->key() <= Qt::Key_9) {
         int index = event->key() - Qt::Key_1;

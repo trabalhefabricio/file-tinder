@@ -47,6 +47,7 @@ enum class AiCategoryMode {
 struct AiFileSuggestion {
     int file_index;
     QStringList suggested_folders;
+    QList<int> confidence_scores;  // Percentage (0-100) per folder suggestion
     QString reasoning;
 };
 
@@ -67,6 +68,7 @@ public:
     int category_depth() const;
     QString folder_purpose() const;
     AiProviderConfig provider_config() const;
+    int confidence_threshold() const;
 
 private:
     void build_ui();
@@ -92,6 +94,7 @@ private:
     QSpinBox* depth_spin_;
     QTextEdit* purpose_edit_;
     QLabel* cost_label_;
+    QSpinBox* confidence_spin_;
     QNetworkAccessManager* fetch_nam_;
 };
 
@@ -135,6 +138,8 @@ private:
 
     QWidget* ai_suggestions_panel_ = nullptr;
     QListWidget* ai_suggestions_list_ = nullptr;
+    QLabel* ai_reasoning_label_ = nullptr;
+    int confidence_threshold_ = 0;
 
     // Show AI setup dialog; returns false if user cancelled
     bool show_ai_setup();

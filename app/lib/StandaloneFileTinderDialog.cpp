@@ -3,6 +3,8 @@
 #include "FileTinderExecutor.hpp"
 #include "AppLogger.hpp"
 #include "ImagePreviewWindow.hpp"
+#include "FileListWindow.hpp"
+#include "DuplicateDetectionWindow.hpp"
 #include "ui_constants.hpp"
 #include <QDir>
 #include <QFileInfo>
@@ -153,6 +155,36 @@ void StandaloneFileTinderDialog::setup_ui() {
     file_position_label_ = new QLabel("File 0 of 0");
     file_position_label_->setStyleSheet("color: #95a5a6; font-size: 12px;");
     top_layout->addWidget(file_position_label_);
+
+    // Duplicate detection ! button — visible when current file has duplicates
+    duplicate_btn_ = new QPushButton("!");
+    duplicate_btn_->setFixedSize(ui::scaling::scaled(28), ui::scaling::scaled(28));
+    duplicate_btn_->setToolTip("Duplicates detected - click to view");
+    duplicate_btn_->setStyleSheet(
+        "QPushButton { font-size: 14px; font-weight: bold; background-color: #e67e22; "
+        "border-radius: 14px; color: white; border: 2px solid #d35400; }"
+        "QPushButton:hover { background-color: #d35400; }"
+    );
+    duplicate_btn_->setVisible(false);
+    connect(duplicate_btn_, &QPushButton::clicked, this, [this]() {
+        auto* dw = new DuplicateDetectionWindow(files_, source_folder_, this);
+        connect(dw, &DuplicateDetectionWindow::files_deleted, this, [this](const QList<int>& indices) {
+            for (int fi : indices) {
+                if (fi >= 0 && fi < static_cast<int>(files_.size())) {
+                    auto& file = files_[fi];
+                    QString old_decision = file.decision;
+                    file.decision = "delete";
+                    update_decision_count(old_decision, -1);
+                    delete_count_++;
+                    record_action(fi, old_decision, "delete");
+                }
+            }
+            update_progress();
+            update_stats();
+        });
+        dw->exec();
+    });
+    top_layout->addWidget(duplicate_btn_);
     
     top_layout->addStretch();
     
@@ -426,7 +458,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     bottom_layout->addStretch();
     
-    // Search box
+    // Search box (also triggers File List window)
     search_box_ = new QLineEdit();
     search_box_->setPlaceholderText("Search files...");
     search_box_->setFixedWidth(ui::scaling::scaled(150));
@@ -441,6 +473,44 @@ void StandaloneFileTinderDialog::setup_ui() {
         on_search(search_box_->text());
     });
     bottom_layout->addWidget(search_box_);
+
+    // File List button — opens separate file browser window
+    auto* file_list_btn = new QPushButton("File List");
+    file_list_btn->setFixedHeight(ui::scaling::scaled(36));
+    file_list_btn->setStyleSheet(
+        "QPushButton { font-size: 11px; padding: 6px 12px; "
+        "background-color: #34495e; border-radius: 4px; color: white; border: 1px solid #4a6078; }"
+        "QPushButton:hover { background-color: #3d566e; }"
+    );
+    file_list_btn->setToolTip("Open file list window (multi-select, drag to folders)");
+    connect(file_list_btn, &QPushButton::clicked, this, [this]() {
+        auto* flw = new FileListWindow(files_, filtered_indices_, current_filtered_index_, this);
+        connect(flw, &FileListWindow::file_selected, this, [this](int filtered_idx) {
+            if (filtered_idx >= 0 && filtered_idx < static_cast<int>(filtered_indices_.size())) {
+                current_filtered_index_ = filtered_idx;
+                show_current_file();
+            }
+        });
+        connect(flw, &FileListWindow::files_assigned, this, [this](const QList<int>& indices, const QString& dest) {
+            for (int fi : indices) {
+                if (fi >= 0 && fi < static_cast<int>(files_.size())) {
+                    auto& file = files_[fi];
+                    QString old_decision = file.decision;
+                    file.decision = "move";
+                    file.destination_folder = dest;
+                    update_decision_count(old_decision, -1);
+                    move_count_++;
+                    record_action(fi, old_decision, "move", dest);
+                }
+            }
+            update_progress();
+            update_stats();
+            show_current_file();
+        });
+        flw->set_destination_folders(get_destination_folders());
+        flw->show();
+    });
+    bottom_layout->addWidget(file_list_btn);
     
     bottom_layout->addSpacing(10);
     
@@ -609,6 +679,11 @@ void StandaloneFileTinderDialog::show_current_file() {
         int pos = current_filtered_index_ + 1;
         int total = static_cast<int>(filtered_indices_.size());
         file_position_label_->setText(QString("File %1 of %2").arg(pos).arg(total));
+    }
+    
+    // Show/hide duplicate ! button based on current file
+    if (duplicate_btn_) {
+        duplicate_btn_->setVisible(file.has_duplicate);
     }
     
     // Context-aware button state
@@ -2130,28 +2205,33 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 <table>
 <tr><th>Key</th><th>Action</th></tr>
 <tr class='section'><td colspan='2'>All Modes</td></tr>
-<tr><td><span class='key'>→</span> Right Arrow</td><td>Keep file in original location</td></tr>
-<tr><td><span class='key'>←</span> Left Arrow</td><td>Mark file for deletion</td></tr>
-<tr><td><span class='key'>↓</span> Down Arrow</td><td>Skip file (no action)</td></tr>
+<tr><td><span class='key'>&rarr;</span> Right Arrow</td><td>Keep file in original location</td></tr>
+<tr><td><span class='key'>&larr;</span> Left Arrow</td><td>Mark file for deletion</td></tr>
+<tr><td><span class='key'>&darr;</span> Down Arrow</td><td>Skip file (no action)</td></tr>
 <tr><td><span class='key'>Z</span> or <span class='key'>Backspace</span></td><td>Undo last action</td></tr>
 <tr><td><span class='key'>P</span></td><td>Toggle file preview</td></tr>
 <tr><td><span class='key'>Enter</span></td><td>Finish review and execute</td></tr>
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
 <tr><td><span class='key'>Esc</span></td><td>Close dialog</td></tr>
+<tr><td>File List button</td><td>Open file list window (multi-select, right-click to assign)</td></tr>
+<tr><td><span class='key'>!</span> button</td><td>View and manage duplicate files (when detected)</td></tr>
 <tr class='section'><td colspan='2'>Advanced / AI Mode</td></tr>
 <tr><td><span class='key'>K</span></td><td>Keep file</td></tr>
 <tr><td><span class='key'>1</span>-<span class='key'>0</span></td><td>Move file to Quick Access folder 1-10</td></tr>
 <tr><td>Click grid folder</td><td>Move file to that folder</td></tr>
+<tr><td>A-Z / # buttons</td><td>Sort grid alphabetically / by file count</td></tr>
 <tr><td>Full Paths toggle</td><td>Show folder path structure in grid buttons</td></tr>
 <tr><td>Width spinner</td><td>Adjust grid button width (80-300px)</td></tr>
 <tr class='section'><td colspan='2'>AI Mode</td></tr>
 <tr><td>AI Setup button</td><td>Configure provider, model, and sorting options</td></tr>
 <tr><td>Re-run AI button</td><td>Re-analyze unsorted or all files</td></tr>
 <tr><td>Semi mode</td><td>AI highlights suggested folders in grid + AI Suggestions bar</td></tr>
+<tr><td>AI Reasoning</td><td>Shows why the AI picked specific folders for the current file</td></tr>
+<tr><td>Confidence %</td><td>Color-coded certainty level on each suggestion</td></tr>
 <tr><td>Category review</td><td>Edit AI-proposed categories before they are created</td></tr>
 </table>
 <br>
-<b>Tip:</b> Use the search box to find files by name (Enter cycles through matches). In the review screen, type folder paths directly into the destination dropdown. Right-click folders for context menu. In AI mode, click 'AI Setup' to configure before sorting.
+<b>Tip:</b> Use the File List to browse and multi-select files. In the review screen, type folder paths directly into the destination dropdown. Right-click folders for context menu. Use A-Z/#  to organize the grid. Switch themes from the launcher.
 )";
     
     help_dialog.setTextFormat(Qt::RichText);

@@ -58,6 +58,11 @@ public:
         
         build_interface();
         
+        // Load theme preference
+        QSettings theme_settings("FileTinder", "FileTinder");
+        is_dark_theme_ = theme_settings.value("darkTheme", true).toBool();
+        apply_theme();
+        
         // Pre-fill last used folder if it still exists
         QSettings settings("FileTinder", "FileTinder");
         QString last_folder = settings.value("lastFolder").toString();
@@ -76,6 +81,33 @@ private:
     QLabel* path_indicator_;
     QListWidget* recent_list_ = nullptr;
     bool skip_stats_on_next_launch_ = false;  // Skip stats dashboard on mode switch
+    bool is_dark_theme_ = true;
+    
+    void apply_theme() {
+        QPalette p;
+        if (is_dark_theme_) {
+            p.setColor(QPalette::Window, QColor(45, 45, 45));
+            p.setColor(QPalette::WindowText, QColor(230, 230, 230));
+            p.setColor(QPalette::Base, QColor(35, 35, 35));
+            p.setColor(QPalette::AlternateBase, QColor(55, 55, 55));
+            p.setColor(QPalette::Text, QColor(230, 230, 230));
+            p.setColor(QPalette::Button, QColor(50, 50, 50));
+            p.setColor(QPalette::ButtonText, QColor(230, 230, 230));
+            p.setColor(QPalette::Highlight, QColor(0, 120, 212));
+            p.setColor(QPalette::HighlightedText, QColor(255, 255, 255));
+        } else {
+            p.setColor(QPalette::Window, QColor(240, 240, 240));
+            p.setColor(QPalette::WindowText, QColor(30, 30, 30));
+            p.setColor(QPalette::Base, QColor(255, 255, 255));
+            p.setColor(QPalette::AlternateBase, QColor(235, 235, 235));
+            p.setColor(QPalette::Text, QColor(30, 30, 30));
+            p.setColor(QPalette::Button, QColor(225, 225, 225));
+            p.setColor(QPalette::ButtonText, QColor(30, 30, 30));
+            p.setColor(QPalette::Highlight, QColor(0, 120, 212));
+            p.setColor(QPalette::HighlightedText, QColor(255, 255, 255));
+        }
+        QApplication::setPalette(p);
+    }
     
     bool eventFilter(QObject* obj, QEvent* event) override {
         if (recent_list_ && obj == recent_list_->viewport() && event->type() == QEvent::MouseButtonPress) {
@@ -236,6 +268,21 @@ private:
         tools_row->addWidget(undo_history_btn);
         
         tools_row->addStretch();
+        
+        // Theme toggle button
+        auto* theme_btn = new QPushButton("Light Theme");
+        theme_btn->setStyleSheet(
+            "QPushButton { padding: 6px 12px; background-color: #4a4a4a; color: #cccccc; border: 1px solid #555555; }"
+            "QPushButton:hover { background-color: #555555; }"
+        );
+        connect(theme_btn, &QPushButton::clicked, this, [this, theme_btn]() {
+            is_dark_theme_ = !is_dark_theme_;
+            apply_theme();
+            theme_btn->setText(is_dark_theme_ ? "Light Theme" : "Dark Theme");
+            QSettings settings("FileTinder", "FileTinder");
+            settings.setValue("darkTheme", is_dark_theme_);
+        });
+        tools_row->addWidget(theme_btn);
         
         auto* diag_btn = new QPushButton("Diagnostics");
         diag_btn->setStyleSheet(
