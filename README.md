@@ -1,6 +1,6 @@
 # File Tinder
 
-A swipe-style file organization tool with an intuitive "Tinder-like" interface for quickly sorting and organizing files.
+A swipe-style file organization tool with an intuitive "Tinder-like" interface for quickly sorting and organizing files. Made for ADHD people who need to get things done but can't handle a messy environment
 
 ![File Tinder](https://img.shields.io/badge/Qt-6.x-green) ![C++17](https://img.shields.io/badge/C%2B%2B-17-blue) ![License](https://img.shields.io/badge/License-MIT-yellow)
 
