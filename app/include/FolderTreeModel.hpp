@@ -18,6 +18,7 @@ struct FolderNode {
     bool is_external;                 // Folder outside the source folder
     int connection_group_id;          // Connection group ID
     int assigned_file_count;
+    QString custom_color;             // User-assigned color (hex, empty = default)
     FolderNode* parent;
     std::vector<std::unique_ptr<FolderNode>> children;
     
@@ -76,6 +77,10 @@ public:
     QStringList get_all_folder_paths() const;  // All non-root folder paths in tree
     QModelIndex index_for_path(const QString& path) const;
     FolderNode* root_node() const { return root_.get(); }
+    
+    // Sorting
+    void sort_children_alphabetically(FolderNode* node);
+    void sort_children_by_count(FolderNode* node);
     
     // Persistence
     void load_from_database(DatabaseManager& db, const QString& session_folder);

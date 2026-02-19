@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find Qt6 packages
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Sql)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui Sql Network)
 
 # Source files
 set(SOURCES
@@ -24,6 +24,9 @@ set(SOURCES
     app/lib/DiagnosticTool.cpp
     app/lib/FilterWidget.cpp
     app/lib/ImagePreviewWindow.cpp
+    app/lib/AiFileTinderDialog.cpp
+    app/lib/FileListWindow.cpp
+    app/lib/DuplicateDetectionWindow.cpp
 )
 
 # Header files
@@ -40,6 +43,9 @@ set(HEADERS
     app/include/DiagnosticTool.hpp
     app/include/FilterWidget.hpp
     app/include/ImagePreviewWindow.hpp
+    app/include/AiFileTinderDialog.hpp
+    app/include/FileListWindow.hpp
+    app/include/DuplicateDetectionWindow.hpp
 )
 
 # Resources
@@ -65,6 +71,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::Widgets
     Qt6::Gui
     Qt6::Sql
+    Qt6::Network
 )
 
 # Installation

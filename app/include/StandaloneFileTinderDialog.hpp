@@ -107,6 +107,7 @@ protected:
     int delete_count_;
     int skip_count_;
     int move_count_;
+    int copy_count_ = 0;
     
     // Undo stack
     std::vector<ActionRecord> undo_stack_;
@@ -139,6 +140,7 @@ protected:
     QPushButton* finish_btn_;
     QPushButton* switch_mode_btn_;
     QPushButton* help_btn_;
+    QPushButton* duplicate_btn_ = nullptr;  // Duplicate detection ! button
     
     // Animation
     QPropertyAnimation* swipe_animation_;
@@ -223,6 +225,7 @@ protected:
 signals:
     void session_completed();
     void switch_to_advanced_mode();
+    void switch_to_ai_mode();
     
 protected slots:
     void on_switch_mode_clicked();

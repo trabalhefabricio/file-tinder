@@ -87,16 +87,27 @@ void AdvancedFileTinderDialog::setup_ui() {
     
     title_layout->addStretch();
     
-    switch_mode_btn_ = new QPushButton("Basic Mode");
+    switch_mode_btn_ = new QPushButton("Switch Mode");
     switch_mode_btn_->setStyleSheet(
         "QPushButton { padding: 5px 15px; background-color: #3498db; "
         "border-radius: 4px; color: white; }"
         "QPushButton:hover { background-color: #2980b9; }"
     );
     connect(switch_mode_btn_, &QPushButton::clicked, this, [this]() {
-        save_folder_tree();
-        save_quick_access();
-        emit switch_to_basic_mode();
+        QMenu menu(this);
+        auto* basic_action = menu.addAction("Basic Mode");
+        auto* ai_action = menu.addAction("AI Mode");
+        QAction* selected = menu.exec(switch_mode_btn_->mapToGlobal(
+            QPoint(0, switch_mode_btn_->height())));
+        if (selected == basic_action) {
+            save_folder_tree();
+            save_quick_access();
+            emit switch_to_basic_mode();
+        } else if (selected == ai_action) {
+            save_folder_tree();
+            save_quick_access();
+            emit switch_to_ai_mode();
+        }
     });
     title_layout->addWidget(switch_mode_btn_);
     
@@ -204,6 +215,69 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     });
     grid_toolbar->addWidget(rows_spin);
     
+    auto* compact_btn = new QPushButton("Compact");
+    compact_btn->setMaximumWidth(70);
+    compact_btn->setCheckable(true);
+    compact_btn->setChecked(true);
+    compact_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    compact_btn->setToolTip("Toggle compact/expanded folder buttons");
+    connect(compact_btn, &QPushButton::toggled, this, [this, compact_btn](bool checked) {
+        compact_btn->setText(checked ? "Compact" : "Expanded");
+        if (mind_map_view_) {
+            mind_map_view_->set_compact_mode(checked);
+            mind_map_view_->refresh_layout();
+        }
+    });
+    grid_toolbar->addWidget(compact_btn);
+    
+    auto* fullpath_btn = new QPushButton("Full Paths");
+    fullpath_btn->setMaximumWidth(75);
+    fullpath_btn->setCheckable(true);
+    fullpath_btn->setChecked(false);
+    fullpath_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }");
+    fullpath_btn->setToolTip("Show full folder path structure in button names");
+    connect(fullpath_btn, &QPushButton::toggled, this, [this](bool checked) {
+        if (mind_map_view_) {
+            mind_map_view_->set_show_full_paths(checked);
+            mind_map_view_->refresh_layout();
+        }
+    });
+    grid_toolbar->addWidget(fullpath_btn);
+
+    grid_toolbar->addWidget(new QLabel("Width:"));
+    auto* width_spin = new QSpinBox();
+    width_spin->setRange(80, 300);
+    width_spin->setValue(120);
+    width_spin->setSingleStep(10);
+    width_spin->setMaximumWidth(60);
+    width_spin->setToolTip("Custom folder button width in pixels");
+    connect(width_spin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int val) {
+        if (mind_map_view_) {
+            mind_map_view_->set_custom_width(val);
+            mind_map_view_->refresh_layout();
+        }
+    });
+    grid_toolbar->addWidget(width_spin);
+    
+    // Grid sorting buttons
+    auto* sort_az_btn = new QPushButton("A-Z");
+    sort_az_btn->setMaximumWidth(35);
+    sort_az_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 4px; }");
+    sort_az_btn->setToolTip("Sort grid folders alphabetically");
+    connect(sort_az_btn, &QPushButton::clicked, this, [this]() {
+        if (mind_map_view_) mind_map_view_->sort_alphabetically();
+    });
+    grid_toolbar->addWidget(sort_az_btn);
+    
+    auto* sort_count_btn = new QPushButton("#");
+    sort_count_btn->setMaximumWidth(25);
+    sort_count_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 4px; }");
+    sort_count_btn->setToolTip("Sort grid folders by file count (most files first)");
+    connect(sort_count_btn, &QPushButton::clicked, this, [this]() {
+        if (mind_map_view_) mind_map_view_->sort_by_count();
+    });
+    grid_toolbar->addWidget(sort_count_btn);
+    
     grid_toolbar->addStretch();
     
     auto* save_cfg_btn = new QPushButton("Save Grid");
@@ -224,6 +298,45 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     connect(reset_grid_btn, &QPushButton::clicked, this, &AdvancedFileTinderDialog::reset_grid);
     grid_toolbar->addWidget(reset_grid_btn);
     
+    auto* presets_btn = new QPushButton("Presets");
+    presets_btn->setMaximumWidth(55);
+    presets_btn->setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; color: #f39c12; }");
+    presets_btn->setToolTip("Load a template grid preset");
+    connect(presets_btn, &QPushButton::clicked, this, [this, presets_btn]() {
+        QMenu menu;
+        auto add_preset = [&](const QString& name, const QStringList& folders) {
+            menu.addAction(name, [this, name, folders]() {
+                auto reply = QMessageBox::question(this, "Load Preset",
+                    QString("Load the '%1' template?\nThis will replace the current grid folders.").arg(name),
+                    QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+                if (reply != QMessageBox::Yes) return;
+                if (folder_model_) {
+                    QStringList current = folder_model_->get_all_folder_paths();
+                    folder_model_->blockSignals(true);
+                    for (int i = current.size() - 1; i >= 0; --i)
+                        folder_model_->remove_folder(current[i]);
+                    for (const QString& f : folders)
+                        folder_model_->add_folder(source_folder_ + "/" + f, true);
+                    folder_model_->blockSignals(false);
+                    emit folder_model_->folder_structure_changed();
+                }
+                if (mind_map_view_) mind_map_view_->refresh_layout();
+            });
+        };
+        add_preset("Downloads Cleanup", {"Documents", "Images", "Videos", "Music",
+            "Archives", "Installers", "Other"});
+        add_preset("Photo Organization", {"Portraits", "Landscapes", "Events",
+            "Screenshots", "Edits", "Raw Files", "Exports"});
+        add_preset("Development Project", {"Source", "Assets", "Build", "Docs",
+            "Config", "Tests", "Scripts", "Dependencies"});
+        add_preset("Music Library", {"Albums", "Singles", "Podcasts", "Sound Effects",
+            "Samples", "Stems", "Mixes"});
+        add_preset("Document Archive", {"Financial", "Legal", "Personal", "Work",
+            "Medical", "Education", "Reference"});
+        menu.exec(presets_btn->mapToGlobal(QPoint(0, presets_btn->height())));
+    });
+    grid_toolbar->addWidget(presets_btn);
+    
     map_layout->addLayout(grid_toolbar);
     
     mind_map_view_ = new MindMapView();
@@ -239,7 +352,7 @@ void AdvancedFileTinderDialog::setup_mind_map() {
     map_layout->addWidget(mind_map_view_);
     
     // Hint label
-    auto* hint = new QLabel("Click folder to assign file. [+] to add. Right-click for options. K=Keep, D/←=Delete, S/↓=Skip, 1-0=Quick Access");
+    auto* hint = new QLabel("Click folder to assign file. [+] to add. Right-click for options. K=Keep, D=Delete, S=Skip, 1-0=Quick Access, Tab=Grid navigation");
     hint->setStyleSheet("color: #666; font-size: 10px;");
     hint->setWordWrap(true);
     map_layout->addWidget(hint);
@@ -286,10 +399,15 @@ void AdvancedFileTinderDialog::setup_file_info_panel() {
     adv_preview_label_->setVisible(false);
     info_layout->addWidget(adv_preview_label_);
     
-    // Progress
+    // Progress — circular style for advanced/AI modes
     progress_bar_ = new QProgressBar();
     progress_bar_->setMaximumWidth(150);
+    progress_bar_->setMaximumHeight(20);
     progress_bar_->setTextVisible(true);
+    progress_bar_->setStyleSheet(
+        "QProgressBar { border: 2px solid #34495e; border-radius: 10px; "
+        "text-align: center; background: #2c3e50; color: #ecf0f1; font-size: 10px; }"
+        "QProgressBar::chunk { background-color: #27ae60; border-radius: 8px; }");
     info_layout->addWidget(progress_bar_);
     
     static_cast<QVBoxLayout*>(layout())->addWidget(file_info_panel_);
@@ -563,6 +681,10 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
         add_to_quick_access(folder_path);
     });
     
+    menu.addAction("Open Folder", [folder_path]() {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folder_path));
+    });
+    
     // Replace with another folder
     if (folder_path != source_folder_) {
         menu.addAction("Replace with...", [this, folder_path]() {
@@ -611,6 +733,31 @@ void AdvancedFileTinderDialog::on_folder_context_menu(const QString& folder_path
             if (mind_map_view_) mind_map_view_->refresh_layout();
         }
     });
+    
+    // Color coding
+    if (folder_model_ && folder_path != source_folder_) {
+        QMenu* color_menu = menu.addMenu("Set Color");
+        auto add_color = [this, folder_path, color_menu](const QString& label, const QString& hex) {
+            auto* action = color_menu->addAction(label);
+            connect(action, &QAction::triggered, this, [this, folder_path, hex]() {
+                if (folder_model_) {
+                    FolderNode* node = folder_model_->find_node(folder_path);
+                    if (node) {
+                        node->custom_color = hex;
+                        if (mind_map_view_) mind_map_view_->refresh_layout();
+                    }
+                }
+            });
+        };
+        add_color("Default", "");
+        add_color("Red", "#e74c3c");
+        add_color("Green", "#2ecc71");
+        add_color("Blue", "#3498db");
+        add_color("Orange", "#f39c12");
+        add_color("Purple", "#9b59b6");
+        add_color("Cyan", "#1abc9c");
+        add_color("Pink", "#e91e63");
+    }
     
     if (folder_model_) {
         FolderNode* node = folder_model_->find_node(folder_path);
@@ -731,12 +878,20 @@ void AdvancedFileTinderDialog::remove_from_quick_access(int index) {
 void AdvancedFileTinderDialog::update_quick_access_display() {
     quick_access_list_->clear();
     
+    static const int kMaxQuickAccessNameLength = 14;
+    
     for (int i = 0; i < quick_access_folders_.size(); ++i) {
         QString path = quick_access_folders_[i];
-        QString label = QString("%1: %2").arg(i == 9 ? 0 : i + 1).arg(QFileInfo(path).fileName());
+        QString folder_name = QFileInfo(path).fileName();
+        // Truncate long names to keep uniform item width
+        if (folder_name.length() > kMaxQuickAccessNameLength) {
+            folder_name = folder_name.left(kMaxQuickAccessNameLength - 1) + "…";
+        }
+        QString label = QString("%1: %2").arg(i == 9 ? 0 : i + 1).arg(folder_name);
         auto* item = new QListWidgetItem(label);
         item->setData(Qt::UserRole, path);
         item->setToolTip(path);
+        item->setSizeHint(QSize(ui::scaling::scaled(120), ui::scaling::scaled(28)));
         quick_access_list_->addItem(item);
     }
 }
@@ -979,6 +1134,43 @@ void AdvancedFileTinderDialog::on_undo() {
 }
 
 void AdvancedFileTinderDialog::keyPressEvent(QKeyEvent* event) {
+    // If in grid keyboard navigation mode, handle grid navigation keys
+    if (mind_map_view_ && mind_map_view_->keyboard_mode()) {
+        switch (event->key()) {
+            case Qt::Key_Tab:
+            case Qt::Key_Right:
+                mind_map_view_->focus_next();
+                return;
+            case Qt::Key_Backtab:  // Shift+Tab
+            case Qt::Key_Left:
+                mind_map_view_->focus_prev();
+                return;
+            case Qt::Key_Up:
+                mind_map_view_->focus_up();
+                return;
+            case Qt::Key_Down:
+                mind_map_view_->focus_down();
+                return;
+            case Qt::Key_Space:
+            case Qt::Key_Return:
+            case Qt::Key_Enter:
+                mind_map_view_->activate_focused();
+                return;
+            case Qt::Key_Escape:
+                // Exit keyboard grid navigation mode
+                mind_map_view_->set_keyboard_mode(false);
+                return;
+            default:
+                break;
+        }
+    }
+
+    // Tab key enters grid keyboard navigation mode
+    if (event->key() == Qt::Key_Tab && mind_map_view_ && !mind_map_view_->keyboard_mode()) {
+        mind_map_view_->set_keyboard_mode(true);
+        return;
+    }
+
     // Number keys 1-9, 0 for quick access
     if (event->key() >= Qt::Key_1 && event->key() <= Qt::Key_9) {
         int index = event->key() - Qt::Key_1;
@@ -1124,6 +1316,17 @@ void AdvancedFileTinderDialog::save_grid_config() {
     if (!ok || name.isEmpty()) return;
     
     QStringList paths = folder_model_->get_all_folder_paths();
+    
+    // Append display settings as metadata entries (prefixed with __meta__)
+    bool compact = mind_map_view_ ? mind_map_view_->compact_mode() : true;
+    int rows = mind_map_view_ ? mind_map_view_->max_rows_per_col() : 6;
+    int custom_w = mind_map_view_ ? mind_map_view_->custom_width() : 0;
+    bool full_paths = mind_map_view_ ? mind_map_view_->show_full_paths() : false;
+    paths.append(QString("__meta__compact=%1").arg(compact ? 1 : 0));
+    paths.append(QString("__meta__rows=%1").arg(rows));
+    paths.append(QString("__meta__width=%1").arg(custom_w));
+    paths.append(QString("__meta__fullpaths=%1").arg(full_paths ? 1 : 0));
+    
     db_.save_grid_config(source_folder_, name, paths);
     QMessageBox::information(this, "Saved", QString("Grid configuration '%1' saved with %2 folder(s).")
         .arg(name).arg(paths.size()));
@@ -1144,19 +1347,46 @@ void AdvancedFileTinderDialog::load_grid_config() {
     QStringList paths = db_.get_grid_config(source_folder_, name);
     if (paths.isEmpty()) return;
     
-    // Clear current tree (except root)
+    // Extract display metadata from config
+    bool has_meta = false;
+    bool meta_compact = true;
+    int meta_rows = 6;
+    int meta_width = 0;
+    bool meta_fullpaths = false;
+    QStringList folder_paths;
+    for (const QString& p : paths) {
+        if (p.startsWith("__meta__")) {
+            has_meta = true;
+            if (p.startsWith("__meta__compact=")) meta_compact = p.mid(16).toInt();
+            else if (p.startsWith("__meta__rows=")) meta_rows = p.mid(13).toInt();
+            else if (p.startsWith("__meta__width=")) meta_width = p.mid(14).toInt();
+            else if (p.startsWith("__meta__fullpaths=")) meta_fullpaths = p.mid(18).toInt();
+        } else {
+            folder_paths.append(p);
+        }
+    }
+    
+    // Clear current tree (except root) — remove in reverse order so
+    // children are removed before their parents (avoid double-free)
     if (folder_model_) {
         QStringList current = folder_model_->get_all_folder_paths();
         folder_model_->blockSignals(true);
-        for (const QString& p : current) {
-            folder_model_->remove_folder(p);
+        for (int i = current.size() - 1; i >= 0; --i) {
+            folder_model_->remove_folder(current[i]);
         }
         // Add folders from config
-        for (const QString& p : paths) {
+        for (const QString& p : folder_paths) {
             bool is_virtual = !QDir(p).exists();
             folder_model_->add_folder(p, is_virtual);
         }
         folder_model_->blockSignals(false);
+    }
+    // Apply display settings
+    if (has_meta && mind_map_view_) {
+        mind_map_view_->set_compact_mode(meta_compact);
+        mind_map_view_->set_max_rows_per_col(meta_rows);
+        mind_map_view_->set_custom_width(meta_width);
+        mind_map_view_->set_show_full_paths(meta_fullpaths);
     }
     if (mind_map_view_) mind_map_view_->refresh_layout();
 }
@@ -1192,8 +1422,8 @@ void AdvancedFileTinderDialog::reset_grid() {
     }
     
     folder_model_->blockSignals(true);
-    for (const QString& p : current) {
-        folder_model_->remove_folder(p);
+    for (int i = current.size() - 1; i >= 0; --i) {
+        folder_model_->remove_folder(current[i]);
     }
     folder_model_->blockSignals(false);
     

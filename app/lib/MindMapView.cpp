@@ -3,6 +3,7 @@
 #include "ui_constants.hpp"
 #include <QContextMenuEvent>
 #include <QMouseEvent>
+#include <QDir>
 #include <QDrag>
 #include <QMimeData>
 #include <QDragEnterEvent>
@@ -27,9 +28,20 @@ FolderButton::FolderButton(FolderNode* node, QWidget* parent)
 }
 
 void FolderButton::update_display() {
-    QString name = node_->display_name;
-    if (name.isEmpty()) {
-        name = QFileInfo(node_->path).fileName();
+    QString name;
+    if (show_full_path_) {
+        name = node_->path;
+        QStringList parts = name.split(QDir::separator());
+        if (parts.size() <= 2) parts = name.split('/');  // fallback for stored paths
+        if (parts.size() > 2) {
+            name = parts.mid(parts.size() - 2).join(QDir::separator());
+        }
+        // For single-component paths, just use the full path as-is
+    } else {
+        name = node_->display_name;
+        if (name.isEmpty()) {
+            name = QFileInfo(node_->path).fileName();
+        }
     }
     
     // Compact display: name + count
@@ -38,10 +50,10 @@ void FolderButton::update_display() {
         count_str = QString(" (%1)").arg(node_->assigned_file_count);
     }
     
-    // Truncate long names to fit compact button width
-    static const int kMaxDisplayNameLength = 12;
-    if (name.length() > kMaxDisplayNameLength) {
-        name = name.left(kMaxDisplayNameLength - 1) + "…";
+    // Truncate long names to fit button width (~9px per character at font-size 10px)
+    int max_len = qMax(8, width() / 9);
+    if (name.length() > max_len) {
+        name = name.left(max_len - 1) + "…";
     }
     
     setText(name + count_str);
@@ -61,6 +73,16 @@ void FolderButton::update_style() {
             "border-radius: 4px; color: #3498db; font-weight: bold; font-size: 10px; }"
             "QPushButton:hover { background-color: #1e4a6e; }"
         );
+    } else if (!node_->custom_color.isEmpty()) {
+        // User-assigned custom color
+        QColor c(node_->custom_color);
+        QColor bg = c.darker(300);
+        setStyleSheet(QString(
+            "QPushButton { text-align: center; padding: 2px 6px; "
+            "background-color: %1; border: 1px solid %2; "
+            "border-radius: 4px; color: %2; font-size: 10px; }"
+            "QPushButton:hover { background-color: %3; }"
+        ).arg(bg.name(), c.name(), bg.lighter(120).name()));
     } else if (!node_->exists) {
         setStyleSheet(
             "QPushButton { text-align: center; padding: 2px 6px; "
@@ -181,6 +203,15 @@ void MindMapView::refresh_layout() {
     
     // Set the new content widget
     scroll_area_->setWidget(content_widget_);
+
+    // Rebuild keyboard navigation order if in keyboard mode
+    if (keyboard_mode_) {
+        build_ordered_paths();
+        if (focused_index_ >= ordered_paths_.size()) {
+            focused_index_ = ordered_paths_.isEmpty() ? -1 : 0;
+        }
+        update_focus_visual();
+    }
 }
 
 void MindMapView::build_grid() {
@@ -188,14 +219,21 @@ void MindMapView::build_grid() {
     
     FolderNode* root = model_->root_node();
     
+    // Button dimensions based on display mode
+    int btn_w = custom_width_ > 0 ? ui::scaling::scaled(custom_width_)
+                                   : (compact_mode_ ? ui::scaling::scaled(120) : ui::scaling::scaled(180));
+    int btn_h = compact_mode_ ? ui::scaling::scaled(32) : ui::scaling::scaled(36);
+    int font_size = compact_mode_ ? 11 : 12;
+    
     // Root folder in column 0, spanning all rows that children will use
     auto* root_btn = new FolderButton(root, content_widget_);
-    root_btn->setFixedSize(ui::scaling::scaled(120), ui::scaling::scaled(32));
+    root_btn->set_show_full_path(show_full_paths_);
+    root_btn->setFixedSize(btn_w, btn_h);
     root_btn->setStyleSheet(
-        "QPushButton { text-align: center; padding: 2px 6px; "
+        QString("QPushButton { text-align: center; padding: 2px 6px; "
         "background-color: #1a252f; border: 2px solid #3498db; "
-        "border-radius: 4px; color: #3498db; font-weight: bold; font-size: 11px; }"
-        "QPushButton:hover { background-color: #1e2f3d; }"
+        "border-radius: 4px; color: #3498db; font-weight: bold; font-size: %1px; }"
+        "QPushButton:hover { background-color: #1e2f3d; }").arg(font_size)
     );
     buttons_[root->path] = root_btn;
     grid_positions_[root->path] = {0, 0};
@@ -219,6 +257,17 @@ void MindMapView::build_grid() {
 
 void MindMapView::place_folder_node(FolderNode* node) {
     auto* btn = new FolderButton(node, content_widget_);
+    btn->set_show_full_path(show_full_paths_);
+    
+    // Apply display mode sizing: ensure uniform row height in both modes
+    if (compact_mode_) {
+        int w = custom_width_ > 0 ? ui::scaling::scaled(custom_width_) : ui::scaling::scaled(120);
+        btn->setFixedSize(w, ui::scaling::scaled(32));
+    } else {
+        int w = custom_width_ > 0 ? ui::scaling::scaled(custom_width_) : ui::scaling::scaled(180);
+        btn->setFixedSize(w, ui::scaling::scaled(36));
+    }
+    
     buttons_[node->path] = btn;
     grid_positions_[node->path] = {next_row_, next_col_};
     grid_layout_->addWidget(btn, next_row_, next_col_);
@@ -297,4 +346,145 @@ void MindMapView::dropEvent(QDropEvent* event) {
     }
     
     event->acceptProposedAction();
+}
+
+void MindMapView::sort_alphabetically() {
+    if (!model_ || !model_->root_node()) return;
+    model_->sort_children_alphabetically(model_->root_node());
+    refresh_layout();
+}
+
+void MindMapView::sort_by_count() {
+    if (!model_ || !model_->root_node()) return;
+    model_->sort_children_by_count(model_->root_node());
+    refresh_layout();
+}
+
+void MindMapView::set_keyboard_mode(bool on) {
+    keyboard_mode_ = on;
+    if (on) {
+        build_ordered_paths();
+        if (!ordered_paths_.isEmpty() && focused_index_ < 0) {
+            focused_index_ = 0;
+        }
+        update_focus_visual();
+    } else {
+        focused_index_ = -1;
+        // Clear focus ring from all buttons
+        for (auto it = buttons_.begin(); it != buttons_.end(); ++it) {
+            it.value()->set_selected(false);
+        }
+    }
+}
+
+void MindMapView::build_ordered_paths() {
+    // Build a list of folder paths in grid order (column-major: col 1 top to bottom, then col 2, etc.)
+    // Skip the root (col 0) — it's not a sorting target
+    ordered_paths_.clear();
+
+    // Collect (col, row, path) tuples
+    QList<std::tuple<int, int, QString>> entries;
+    for (auto it = grid_positions_.begin(); it != grid_positions_.end(); ++it) {
+        int row = it.value().first;
+        int col = it.value().second;
+        if (col == 0) continue;  // Skip root
+        entries.append({col, row, it.key()});
+    }
+
+    // Sort by column first, then row
+    std::sort(entries.begin(), entries.end());
+
+    for (const auto& [col, row, path] : entries) {
+        ordered_paths_.append(path);
+    }
+}
+
+void MindMapView::update_focus_visual() {
+    if (!keyboard_mode_) return;
+
+    for (auto it = buttons_.begin(); it != buttons_.end(); ++it) {
+        it.value()->set_selected(false);
+    }
+
+    if (focused_index_ >= 0 && focused_index_ < ordered_paths_.size()) {
+        QString path = ordered_paths_[focused_index_];
+        if (buttons_.contains(path)) {
+            buttons_[path]->set_selected(true);
+            // Ensure the focused button is visible in the scroll area
+            buttons_[path]->ensurePolished();
+            scroll_area_->ensureWidgetVisible(buttons_[path]);
+        }
+    }
+}
+
+void MindMapView::focus_next() {
+    if (ordered_paths_.isEmpty()) return;
+    focused_index_ = (focused_index_ + 1) % ordered_paths_.size();
+    update_focus_visual();
+}
+
+void MindMapView::focus_prev() {
+    if (ordered_paths_.isEmpty()) return;
+    focused_index_--;
+    if (focused_index_ < 0) focused_index_ = ordered_paths_.size() - 1;
+    update_focus_visual();
+}
+
+void MindMapView::focus_up() {
+    if (ordered_paths_.isEmpty() || focused_index_ < 0) return;
+    // Move up one row within the same column
+    QString current = ordered_paths_[focused_index_];
+    if (!grid_positions_.contains(current)) return;
+    auto pos = grid_positions_[current];
+    int target_row = pos.first - 1;
+    int target_col = pos.second;
+
+    // Find the button at (target_row, target_col)
+    for (int i = 0; i < ordered_paths_.size(); ++i) {
+        if (grid_positions_.contains(ordered_paths_[i])) {
+            auto p = grid_positions_[ordered_paths_[i]];
+            if (p.first == target_row && p.second == target_col) {
+                focused_index_ = i;
+                update_focus_visual();
+                return;
+            }
+        }
+    }
+    // If no button above, wrap to bottom of previous column
+    focus_prev();
+}
+
+void MindMapView::focus_down() {
+    if (ordered_paths_.isEmpty() || focused_index_ < 0) return;
+    QString current = ordered_paths_[focused_index_];
+    if (!grid_positions_.contains(current)) return;
+    auto pos = grid_positions_[current];
+    int target_row = pos.first + 1;
+    int target_col = pos.second;
+
+    for (int i = 0; i < ordered_paths_.size(); ++i) {
+        if (grid_positions_.contains(ordered_paths_[i])) {
+            auto p = grid_positions_[ordered_paths_[i]];
+            if (p.first == target_row && p.second == target_col) {
+                focused_index_ = i;
+                update_focus_visual();
+                return;
+            }
+        }
+    }
+    // If no button below, wrap to next
+    focus_next();
+}
+
+void MindMapView::activate_focused() {
+    if (focused_index_ >= 0 && focused_index_ < ordered_paths_.size()) {
+        emit folder_clicked(ordered_paths_[focused_index_]);
+    }
+}
+
+QString MindMapView::focused_folder_path() const {
+    if (focused_index_ >= 0 && focused_index_ < ordered_paths_.size()) {
+        return ordered_paths_[focused_index_];
+    }
+    return {};
 }

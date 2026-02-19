@@ -43,6 +43,7 @@ public:
     std::vector<FileDecision> get_session_decisions(const QString& session_folder);
     bool clear_session(const QString& session_folder);
     FileDecision get_file_decision(const QString& session_folder, const QString& file_path);
+    int get_session_progress_count(const QString& session_folder);
     
     // Folder tree management
     bool save_folder_tree_entry(const QString& session_folder, const FolderTreeEntry& entry);
@@ -78,6 +79,15 @@ public:
     QStringList get_grid_config(const QString& session_folder, const QString& config_name);
     QStringList get_grid_config_names(const QString& session_folder);
     bool delete_grid_config(const QString& session_folder, const QString& config_name);
+    
+    // AI provider settings
+    bool save_ai_provider(const QString& provider_name, const QString& api_key,
+                         const QString& endpoint_url, const QString& model_name,
+                         bool is_local, int rate_limit_rpm);
+    bool get_ai_provider(const QString& provider_name, QString& api_key,
+                        QString& endpoint_url, QString& model_name,
+                        bool& is_local, int& rate_limit_rpm);
+    QStringList get_ai_provider_names();
     
     // Maintenance
     int cleanup_stale_sessions(int days_old = 30);

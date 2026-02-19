@@ -3,6 +3,8 @@
 #include "FileTinderExecutor.hpp"
 #include "AppLogger.hpp"
 #include "ImagePreviewWindow.hpp"
+#include "FileListWindow.hpp"
+#include "DuplicateDetectionWindow.hpp"
 #include "ui_constants.hpp"
 #include <QDir>
 #include <QFileInfo>
@@ -28,6 +30,7 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QPointer>
+#include <QMenu>
 #include <QSet>
 #include <QDesktopServices>
 #include <QUrl>
@@ -152,11 +155,41 @@ void StandaloneFileTinderDialog::setup_ui() {
     file_position_label_ = new QLabel("File 0 of 0");
     file_position_label_->setStyleSheet("color: #95a5a6; font-size: 12px;");
     top_layout->addWidget(file_position_label_);
+
+    // Duplicate detection ! button — visible when current file has duplicates
+    duplicate_btn_ = new QPushButton("!");
+    duplicate_btn_->setFixedSize(ui::scaling::scaled(28), ui::scaling::scaled(28));
+    duplicate_btn_->setToolTip("Duplicates detected - click to view");
+    duplicate_btn_->setStyleSheet(
+        "QPushButton { font-size: 14px; font-weight: bold; background-color: #e67e22; "
+        "border-radius: 14px; color: white; border: 2px solid #d35400; }"
+        "QPushButton:hover { background-color: #d35400; }"
+    );
+    duplicate_btn_->setVisible(false);
+    connect(duplicate_btn_, &QPushButton::clicked, this, [this]() {
+        auto* dw = new DuplicateDetectionWindow(files_, source_folder_, this);
+        connect(dw, &DuplicateDetectionWindow::files_deleted, this, [this](const QList<int>& indices) {
+            for (int fi : indices) {
+                if (fi >= 0 && fi < static_cast<int>(files_.size())) {
+                    auto& file = files_[fi];
+                    QString old_decision = file.decision;
+                    file.decision = "delete";
+                    update_decision_count(old_decision, -1);
+                    delete_count_++;
+                    record_action(fi, old_decision, "delete");
+                }
+            }
+            update_progress();
+            update_stats();
+        });
+        dw->exec();
+    });
+    top_layout->addWidget(duplicate_btn_);
     
     top_layout->addStretch();
     
     // Mode switch in upper right corner
-    switch_mode_btn_ = new QPushButton("Advanced Mode");
+    switch_mode_btn_ = new QPushButton("Switch Mode");
     switch_mode_btn_->setFixedSize(ui::scaling::scaled(130), ui::scaling::scaled(32));
     switch_mode_btn_->setStyleSheet(
         "QPushButton { font-size: 11px; padding: 5px 10px; "
@@ -251,43 +284,55 @@ void StandaloneFileTinderDialog::setup_ui() {
     filter_layout->addStretch();
     main_layout->addWidget(filter_bar);
     
-    // Preview area with centered icon
-    auto* preview_widget = new QWidget();
-    preview_widget->setStyleSheet("background-color: #2c3e50; border-radius: 8px;");
-    auto* preview_layout = new QVBoxLayout(preview_widget);
-    preview_layout->setContentsMargins(15, 15, 15, 15);
+    // File card — unified preview + info + stats panel
+    auto* file_card = new QWidget();
+    file_card->setStyleSheet(
+        "QWidget#fileCard { background-color: #2c3e50; border-radius: 8px; "
+        "border: 1px solid #34495e; }");
+    file_card->setObjectName("fileCard");
+    auto* card_layout = new QVBoxLayout(file_card);
+    card_layout->setContentsMargins(15, 10, 15, 10);
+    card_layout->setSpacing(6);
     
     // Centered file icon (for non-image files)
     file_icon_label_ = new QLabel();
     file_icon_label_->setAlignment(Qt::AlignCenter);
     file_icon_label_->setStyleSheet("font-size: 64px;");
-    preview_layout->addWidget(file_icon_label_);
+    card_layout->addWidget(file_icon_label_);
     
-    // Preview label (for images/text)
+    // Preview label (for images/text) — wrapped in scroll area to prevent
+    // text previews from expanding the window beyond its intended size
     preview_label_ = new QLabel();
     preview_label_->setAlignment(Qt::AlignCenter);
     preview_label_->setWordWrap(true);
-    preview_layout->addWidget(preview_label_, 1);
+    auto* preview_scroll = new QScrollArea();
+    preview_scroll->setWidget(preview_label_);
+    preview_scroll->setWidgetResizable(true);
+    preview_scroll->setFrameShape(QFrame::NoFrame);
+    preview_scroll->setStyleSheet("QScrollArea { background: transparent; }");
+    card_layout->addWidget(preview_scroll, 1);
     
-    // File name and info below preview — double-click to open
+    // File name and info — double-click to open
     file_info_label_ = new QLabel();
     file_info_label_->setAlignment(Qt::AlignCenter);
-    file_info_label_->setStyleSheet("color: #ecf0f1; padding: 10px; font-size: 13px;");
+    file_info_label_->setStyleSheet(
+        "color: #ecf0f1; padding: 8px 10px; font-size: 13px; "
+        "background-color: #34495e; border-radius: 4px;");
     file_info_label_->setWordWrap(true);
     file_info_label_->setCursor(Qt::PointingHandCursor);
     file_info_label_->setToolTip("Double-click to open file");
     file_info_label_->installEventFilter(this);
-    preview_layout->addWidget(file_info_label_);
+    card_layout->addWidget(file_info_label_);
     
     size_badge_label_ = new QLabel();
     size_badge_label_->setAlignment(Qt::AlignCenter);
     size_badge_label_->setStyleSheet(
         "font-size: 16px; font-weight: bold; color: #f39c12; "
-        "background-color: #2c3e50; padding: 4px 8px; border-radius: 4px;"
+        "padding: 4px 8px; border-radius: 4px;"
     );
-    preview_layout->addWidget(size_badge_label_);
+    card_layout->addWidget(size_badge_label_);
     
-    main_layout->addWidget(preview_widget, 1);  // Stretch to fill space
+    main_layout->addWidget(file_card, 1);  // Stretch to fill space
     
     // Progress section
     auto* progress_widget = new QWidget();
@@ -419,7 +464,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     
     bottom_layout->addStretch();
     
-    // Search box
+    // Search box (also triggers File List window)
     search_box_ = new QLineEdit();
     search_box_->setPlaceholderText("Search files...");
     search_box_->setFixedWidth(ui::scaling::scaled(150));
@@ -430,7 +475,48 @@ void StandaloneFileTinderDialog::setup_ui() {
         "QLineEdit:focus { border: 2px solid #3498db; }"
     );
     connect(search_box_, &QLineEdit::textChanged, this, &StandaloneFileTinderDialog::on_search);
+    connect(search_box_, &QLineEdit::returnPressed, this, [this]() {
+        on_search(search_box_->text());
+    });
     bottom_layout->addWidget(search_box_);
+
+    // File List button — opens separate file browser window
+    auto* file_list_btn = new QPushButton("File List");
+    file_list_btn->setFixedHeight(ui::scaling::scaled(36));
+    file_list_btn->setStyleSheet(
+        "QPushButton { font-size: 11px; padding: 6px 12px; "
+        "background-color: #34495e; border-radius: 4px; color: white; border: 1px solid #4a6078; }"
+        "QPushButton:hover { background-color: #3d566e; }"
+    );
+    file_list_btn->setToolTip("Open file list window (multi-select, drag to folders)");
+    connect(file_list_btn, &QPushButton::clicked, this, [this]() {
+        auto* flw = new FileListWindow(files_, filtered_indices_, current_filtered_index_, this);
+        connect(flw, &FileListWindow::file_selected, this, [this](int filtered_idx) {
+            if (filtered_idx >= 0 && filtered_idx < static_cast<int>(filtered_indices_.size())) {
+                current_filtered_index_ = filtered_idx;
+                show_current_file();
+            }
+        });
+        connect(flw, &FileListWindow::files_assigned, this, [this](const QList<int>& indices, const QString& dest) {
+            for (int fi : indices) {
+                if (fi >= 0 && fi < static_cast<int>(files_.size())) {
+                    auto& file = files_[fi];
+                    QString old_decision = file.decision;
+                    file.decision = "move";
+                    file.destination_folder = dest;
+                    update_decision_count(old_decision, -1);
+                    move_count_++;
+                    record_action(fi, old_decision, "move", dest);
+                }
+            }
+            update_progress();
+            update_stats();
+            show_current_file();
+        });
+        flw->set_destination_folders(get_destination_folders());
+        flw->show();
+    });
+    bottom_layout->addWidget(file_list_btn);
     
     bottom_layout->addSpacing(10);
     
@@ -447,7 +533,7 @@ void StandaloneFileTinderDialog::setup_ui() {
     main_layout->addWidget(bottom_bar);
     
     // Keyboard shortcuts hint
-    shortcuts_label_ = new QLabel("→ Keep  |  ← Delete  |  ↓ Skip  |  Z/⌫ Undo  |  P Preview  |  Enter Finish  |  ? Help");
+    shortcuts_label_ = new QLabel("Right=Keep | Left=Delete | Down=Skip | Z=Undo | F=File List | Ctrl+F=Search | P=Preview | Enter=Finish | ?=Help");
     shortcuts_label_->setAlignment(Qt::AlignCenter);
     shortcuts_label_->setStyleSheet("color: #7f8c8d; font-size: 10px;");
     main_layout->addWidget(shortcuts_label_);
@@ -601,6 +687,11 @@ void StandaloneFileTinderDialog::show_current_file() {
         file_position_label_->setText(QString("File %1 of %2").arg(pos).arg(total));
     }
     
+    // Show/hide duplicate ! button based on current file
+    if (duplicate_btn_) {
+        duplicate_btn_->setVisible(file.has_duplicate);
+    }
+    
     // Context-aware button state
     bool has_file = (file_idx >= 0);
     if (keep_btn_) keep_btn_->setEnabled(has_file);
@@ -619,8 +710,9 @@ void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
     // Clear previous content
     if (file_icon_label_) file_icon_label_->clear();
     preview_label_->clear();
-    // Reset style from any previous text file preview
+    // Reset style and alignment from any previous text file preview
     preview_label_->setStyleSheet("");
+    preview_label_->setAlignment(Qt::AlignCenter);
     
     // Determine icon for the file type (always shown centered)
     QString icon = "[FILE]";
@@ -679,6 +771,7 @@ void StandaloneFileTinderDialog::update_preview(const QString& file_path) {
                 content += "\n...(truncated)";
             }
             preview_label_->setText(content);
+            preview_label_->setAlignment(Qt::AlignTop | Qt::AlignLeft);
             preview_label_->setStyleSheet("color: #ecf0f1; font-family: monospace; font-size: 11px;");
             return;
         }
@@ -720,7 +813,7 @@ void StandaloneFileTinderDialog::update_file_info(const FileToProcess& file) {
     // Duplicate detection: use cached flag from scan
     QString dup_warning;
     if (file.has_duplicate) {
-        dup_warning = "<br><span style='color: #e74c3c; font-size: 11px;'>⚠ Possible duplicate found</span>";
+        dup_warning = "<br><span style='color: #e74c3c; font-size: 11px;'>Warning: Possible duplicate found</span>";
     }
     
     file_info_label_->setText(QString("<b style='font-size: 14px;'>%1</b><br>"
@@ -764,16 +857,16 @@ void StandaloneFileTinderDialog::update_stats() {
     if (!stats_label_) return;
     
     QString stats = QString(
-        "<span style='color: %1;'>✓ Keep: %2</span>  |  "
-        "<span style='color: %3;'>✗ Delete: %4</span>  |  "
-        "<span style='color: %5;'>↓ Skip: %6</span>"
+        "<span style='color: %1;'>Keep: %2</span>  |  "
+        "<span style='color: %3;'>Delete: %4</span>  |  "
+        "<span style='color: %5;'>Skip: %6</span>"
     ).arg(ui::colors::kKeepColor).arg(keep_count_)
      .arg(ui::colors::kDeleteColor).arg(delete_count_)
      .arg(ui::colors::kSkipColor).arg(skip_count_);
     
     // Only show Move count if there are moves (relevant in Advanced Mode)
     if (move_count_ > 0) {
-        stats += QString("  |  <span style='color: %1;'>📁 Move: %2</span>")
+        stats += QString("  |  <span style='color: %1;'>Move: %2</span>")
             .arg(ui::colors::kMoveColor).arg(move_count_);
     }
     
@@ -786,6 +879,7 @@ void StandaloneFileTinderDialog::update_decision_count(const QString& old_decisi
     else if (old_decision == "delete") delete_count_ += delta;
     else if (old_decision == "skip") skip_count_ += delta;
     else if (old_decision == "move") move_count_ += delta;
+    else if (old_decision == "copy") copy_count_ += delta;
 }
 
 int StandaloneFileTinderDialog::get_current_file_index() const {
@@ -839,7 +933,7 @@ void StandaloneFileTinderDialog::on_keep() {
         
         // Visual feedback: brief flash on stats
         if (progress_label_) {
-            progress_label_->setText(QString("<span style='color: %1;'>✓ Kept: %2</span>")
+            progress_label_->setText(QString("<span style='color: %1;'>Kept: %2</span>")
                 .arg(ui::colors::kKeepColor, file.name));
         }
         
@@ -873,7 +967,7 @@ void StandaloneFileTinderDialog::on_delete() {
         
         // Visual feedback
         if (progress_label_) {
-            progress_label_->setText(QString("<span style='color: %1;'>✗ Deleted: %2</span>")
+            progress_label_->setText(QString("<span style='color: %1;'>Deleted: %2</span>")
                 .arg(ui::colors::kDeleteColor, file.name));
         }
         
@@ -1068,9 +1162,8 @@ void StandaloneFileTinderDialog::advance_to_next() {
     current_filtered_index_ = static_cast<int>(filtered_indices_.size());
     if (file_icon_label_) file_icon_label_->clear();
     if (preview_label_) {
-        preview_label_->setText("<div style='text-align: center; font-size: 48px;'>🎉</div>"
-                               "<div style='text-align: center; font-size: 18px; color: #2ecc71;'>"
-                               "All files reviewed!</div>");
+        preview_label_->setText("<div style='text-align: center; font-size: 18px; color: #2ecc71; margin-top: 40px;'>"
+                                "All files reviewed!</div>");
     }
     if (file_info_label_) {
         file_info_label_->setText("Click 'Finish Review' to execute your decisions.");
@@ -1199,6 +1292,8 @@ void StandaloneFileTinderDialog::show_review_summary() {
     stats_layout->addWidget(create_stat_box("Delete", delete_count_, ui::colors::kDeleteColor));
     stats_layout->addWidget(create_stat_box("Skip", skip_count_, ui::colors::kSkipColor));
     stats_layout->addWidget(create_stat_box("Move", move_count_, ui::colors::kMoveColor));
+    if (copy_count_ > 0)
+        stats_layout->addWidget(create_stat_box("Copy", copy_count_, "#8e44ad"));
     
     layout->addWidget(stats_widget);
     
@@ -1232,7 +1327,9 @@ void StandaloneFileTinderDialog::show_review_summary() {
     table->setSelectionBehavior(QAbstractItemView::SelectRows);
     
     // Determine mode name for this dialog
-    QString mode_name = windowTitle().contains("Advanced") ? "Advanced" : "Basic";
+    QString mode_name = "Basic";
+    if (windowTitle().contains("AI Mode")) mode_name = "AI";
+    else if (windowTitle().contains("Advanced")) mode_name = "Advanced";
     
     // Populate only files with non-pending decisions
     int visible_row = 0;
@@ -1258,21 +1355,19 @@ void StandaloneFileTinderDialog::show_review_summary() {
         
         // Decision (editable via combo box)
         auto* combo = new QComboBox();
-        combo->addItems({"keep", "delete", "skip", "pending"});
-        if (file.decision == "move") {
-            combo->addItem("move");
-        }
+        combo->addItems({"keep", "delete", "skip", "move", "copy", "pending"});
         combo->setCurrentText(file.decision);
         table->setCellWidget(visible_row, 1, combo);
         
-        // Destination (dropdown with grid folders + "Other...")
+        // Destination (editable dropdown — type paths or select from grid/AI suggestions)
         auto* dest_combo = new QComboBox();
+        dest_combo->setEditable(true);
         dest_combo->addItem("(none)", QString());
-        dest_combo->addItem("Other...", "__other__");
+        // Add grid folders
         QStringList grid_folders = get_destination_folders();
         for (const QString& fp : grid_folders) {
             QString label = QFileInfo(fp).fileName();
-            if (!QDir(fp).exists()) label += " [NEW]";
+            if (!QDir(fp).exists()) label += " [virtual]";
             dest_combo->addItem(label, fp);
         }
         // Set current destination
@@ -1281,30 +1376,23 @@ void StandaloneFileTinderDialog::show_review_summary() {
             if (idx_found >= 0) {
                 dest_combo->setCurrentIndex(idx_found);
             } else {
-                // Not in grid — add it as an entry
-                dest_combo->addItem(QFileInfo(file.destination_folder).fileName(), file.destination_folder);
+                // Not in grid — add it
+                QString label = QFileInfo(file.destination_folder).fileName();
+                if (!QDir(file.destination_folder).exists()) label += " [virtual]";
+                dest_combo->addItem(label, file.destination_folder);
                 dest_combo->setCurrentIndex(dest_combo->count() - 1);
             }
         }
-        dest_combo->setToolTip(file.destination_folder);
-        // Handle "Other..." selection
-        connect(dest_combo, QOverload<int>::of(&QComboBox::activated), this, [this, dest_combo](int idx) {
-            if (dest_combo->itemData(idx).toString() == "__other__") {
-                QString folder = QFileDialog::getExistingDirectory(this, "Choose Destination", source_folder_);
-                if (!folder.isEmpty()) {
-                    dest_combo->addItem(QFileInfo(folder).fileName(), folder);
-                    dest_combo->setCurrentIndex(dest_combo->count() - 1);
-                } else {
-                    dest_combo->setCurrentIndex(0);  // back to "(none)"
-                }
-            }
-        });
+        dest_combo->setToolTip("Type a folder path or select from dropdown. Relative paths are under the source folder.");
         table->setCellWidget(visible_row, 2, dest_combo);
         
-        // Mode column (Req 22-23): moves with destinations are from Advanced, others from current mode
-        QString file_mode = (file.decision == "move" && !file.destination_folder.isEmpty())
-                            ? "Advanced" : mode_name;
-        auto* mode_item = new QTableWidgetItem(file_mode);
+        // Mode column: moves with destinations from Advanced/AI modes; others from current mode
+        QString mode_for_row = mode_name;
+        if (file.decision == "move" && !file.destination_folder.isEmpty()
+            && mode_name == "Basic") {
+            mode_for_row = "Advanced";
+        }
+        auto* mode_item = new QTableWidgetItem(mode_for_row);
         mode_item->setFlags(mode_item->flags() & ~Qt::ItemIsEditable);
         table->setItem(visible_row, 3, mode_item);
         
@@ -1362,7 +1450,7 @@ void StandaloneFileTinderDialog::show_review_summary() {
     
     btn_layout->addStretch();
     
-    auto* execute_btn = new QPushButton("Execute All ✓");
+    auto* execute_btn = new QPushButton("Execute All");
     execute_btn->setStyleSheet(
         "QPushButton { background-color: #2ecc71; color: white; font-weight: bold; "
         "padding: 10px 20px; border-radius: 6px; }"
@@ -1383,7 +1471,16 @@ void StandaloneFileTinderDialog::show_review_summary() {
             QString new_dest;
             if (dest_combo) {
                 new_dest = dest_combo->currentData().toString();
-                if (new_dest == "__other__") new_dest.clear();
+                // If user typed a custom path (editable combo), use text
+                if (new_dest.isEmpty() && dest_combo->currentText() != "(none)") {
+                    QString typed = dest_combo->currentText().trimmed();
+                    if (!typed.isEmpty()) {
+                        if (!typed.startsWith("/") && !typed.contains(":/")) {
+                            typed = QDir::cleanPath(source_folder_ + "/" + typed);
+                        }
+                        new_dest = typed;
+                    }
+                }
             }
             
             if (new_decision != file.decision || new_dest != file.destination_folder) {
@@ -1391,10 +1488,10 @@ void StandaloneFileTinderDialog::show_review_summary() {
                 if (new_decision != "pending") {
                     update_decision_count(new_decision, 1);
                 }
-                // If decision is "move" and has a destination, set it
-                if (new_decision == "move" && !new_dest.isEmpty()) {
+                // If decision is "move" or "copy" and has a destination, set it
+                if ((new_decision == "move" || new_decision == "copy") && !new_dest.isEmpty()) {
                     file.destination_folder = new_dest;
-                } else if (new_decision != "move") {
+                } else if (new_decision != "move" && new_decision != "copy") {
                     file.destination_folder.clear();
                 }
                 file.decision = new_decision;
@@ -1417,11 +1514,15 @@ void StandaloneFileTinderDialog::execute_decisions() {
     // Collect unique destination folders from move decisions
     QSet<QString> dest_folders;
     
+    std::vector<std::pair<QString, QString>> files_to_copy;
     for (const auto& file : files_) {
         if (file.decision == "delete") {
             plan.files_to_delete.push_back(file.path);
         } else if (file.decision == "move" && !file.destination_folder.isEmpty()) {
             plan.files_to_move.push_back({file.path, file.destination_folder});
+            dest_folders.insert(file.destination_folder);
+        } else if (file.decision == "copy" && !file.destination_folder.isEmpty()) {
+            files_to_copy.push_back({file.path, file.destination_folder});
             dest_folders.insert(file.destination_folder);
         }
     }
@@ -1448,6 +1549,16 @@ void StandaloneFileTinderDialog::execute_decisions() {
     }
     // Clear the create list since we handled it above
     plan.folders_to_create.clear();
+    
+    // Execute copy operations
+    for (const auto& [src, dest_folder] : files_to_copy) {
+        if (failed_folders.contains(dest_folder)) continue;
+        QString dest_path = QDir::cleanPath(dest_folder + "/" + QFileInfo(src).fileName());
+        if (!QFile::copy(src, dest_path)) {
+            LOG_WARN("Execute", QString("Failed to copy: %1 -> %2 (error: %3)")
+                .arg(src, dest_path, QFile(src).errorString()));
+        }
+    }
     
     // Remove moves targeting failed folders
     if (!failed_folders.isEmpty()) {
@@ -1601,7 +1712,7 @@ void StandaloneFileTinderDialog::show_execution_results(const ExecutionResult& r
             connect(undo_btn, &QPushButton::clicked, this, [this, entry, undo_btn, action_item]() {
                 if (FileTinderExecutor::undo_action(entry)) {
                     undo_btn->setEnabled(false);
-                    undo_btn->setText("Done ✓");
+                    undo_btn->setText("Done");
                     action_item->setText(entry.action + " (undone)");
                     
                     // Remove from database log
@@ -1646,6 +1757,12 @@ void StandaloneFileTinderDialog::show_execution_results(const ExecutionResult& r
 }
 
 void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
+    // Don't intercept keys when a text input has focus
+    if (search_box_ && search_box_->hasFocus()) {
+        QDialog::keyPressEvent(event);
+        return;
+    }
+
     switch (event->key()) {
         case Qt::Key_Right:
             on_keep();
@@ -1663,12 +1780,46 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
             on_undo();
             break;
         case Qt::Key_Z:
-            // Undo last action
             on_undo();
             break;
         case Qt::Key_P:
-            // Open preview in separate window
             on_show_preview();
+            break;
+        case Qt::Key_F:
+            // F opens the File List window
+            if (event->modifiers() & Qt::ControlModifier) {
+                // Ctrl+F focuses search box
+                if (search_box_) { search_box_->setFocus(); search_box_->selectAll(); }
+            } else {
+                // F opens File List window (same as clicking "File List" button)
+                {
+                    auto* flw = new FileListWindow(files_, filtered_indices_, current_filtered_index_, this);
+                    connect(flw, &FileListWindow::file_selected, this, [this](int filtered_idx) {
+                        if (filtered_idx >= 0 && filtered_idx < static_cast<int>(filtered_indices_.size())) {
+                            current_filtered_index_ = filtered_idx;
+                            show_current_file();
+                        }
+                    });
+                    connect(flw, &FileListWindow::files_assigned, this, [this](const QList<int>& indices, const QString& dest) {
+                        for (int fi : indices) {
+                            if (fi >= 0 && fi < static_cast<int>(files_.size())) {
+                                auto& file = files_[fi];
+                                QString old_decision = file.decision;
+                                file.decision = "move";
+                                file.destination_folder = dest;
+                                update_decision_count(old_decision, -1);
+                                move_count_++;
+                                record_action(fi, old_decision, "move", dest);
+                            }
+                        }
+                        update_progress();
+                        update_stats();
+                        show_current_file();
+                    });
+                    flw->set_destination_folders(get_destination_folders());
+                    flw->show();
+                }
+            }
             break;
         case Qt::Key_Return:
         case Qt::Key_Enter:
@@ -1680,7 +1831,6 @@ void StandaloneFileTinderDialog::keyPressEvent(QKeyEvent* event) {
                 show_shortcuts_help();
             }
             break;
-        // Note: Number keys 1-0 are reserved for Quick Access in Advanced Mode
         default:
             QDialog::keyPressEvent(event);
     }
@@ -1769,8 +1919,18 @@ bool StandaloneFileTinderDialog::eventFilter(QObject* obj, QEvent* event) {
 }
 
 void StandaloneFileTinderDialog::on_switch_mode_clicked() {
-    save_session_state();
-    emit switch_to_advanced_mode();
+    QMenu menu(this);
+    auto* adv_action = menu.addAction("Advanced Mode");
+    auto* ai_action = menu.addAction("AI Mode");
+    QAction* selected = menu.exec(switch_mode_btn_->mapToGlobal(
+        QPoint(0, switch_mode_btn_->height())));
+    if (selected == adv_action) {
+        save_session_state();
+        emit switch_to_advanced_mode();
+    } else if (selected == ai_action) {
+        save_session_state();
+        emit switch_to_ai_mode();
+    }
 }
 
 // Sorting implementation
@@ -2082,23 +2242,45 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
     QString shortcuts = R"(
 <style>
     table { border-collapse: collapse; width: 100%; }
-    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #444; }
+    th, td { padding: 6px; text-align: left; border-bottom: 1px solid #444; }
     th { background-color: #34495e; color: white; }
     .key { font-family: monospace; background: #3d566e; padding: 2px 6px; border-radius: 3px; }
+    .section { background-color: #2c3e50; color: #3498db; font-weight: bold; }
 </style>
 <table>
 <tr><th>Key</th><th>Action</th></tr>
-<tr><td><span class='key'>→</span> Right Arrow</td><td>Keep file in original location</td></tr>
-<tr><td><span class='key'>←</span> Left Arrow</td><td>Mark file for deletion</td></tr>
-<tr><td><span class='key'>↓</span> Down Arrow</td><td>Skip file (no action)</td></tr>
+<tr class='section'><td colspan='2'>All Modes</td></tr>
+<tr><td><span class='key'>&rarr;</span> Right Arrow</td><td>Keep file in original location</td></tr>
+<tr><td><span class='key'>&larr;</span> Left Arrow</td><td>Mark file for deletion</td></tr>
+<tr><td><span class='key'>&darr;</span> Down Arrow</td><td>Skip file (no action)</td></tr>
 <tr><td><span class='key'>Z</span> or <span class='key'>Backspace</span></td><td>Undo last action</td></tr>
 <tr><td><span class='key'>P</span></td><td>Toggle file preview</td></tr>
 <tr><td><span class='key'>Enter</span></td><td>Finish review and execute</td></tr>
 <tr><td><span class='key'>?</span> or <span class='key'>Shift+/</span></td><td>Show this help</td></tr>
 <tr><td><span class='key'>Esc</span></td><td>Close dialog</td></tr>
+<tr><td>File List button</td><td>Open file list window (multi-select, right-click to assign)</td></tr>
+<tr><td><span class='key'>F</span></td><td>Open File List window (multi-select, filter, assign)</td></tr>
+<tr><td><span class='key'>Ctrl+F</span></td><td>Focus search box</td></tr>
+<tr><td><span class='key'>!</span> button</td><td>View and manage duplicate files (when detected)</td></tr>
+<tr class='section'><td colspan='2'>Advanced / AI Mode</td></tr>
+<tr><td><span class='key'>K</span></td><td>Keep file</td></tr>
+<tr><td><span class='key'>1</span>-<span class='key'>0</span></td><td>Move file to Quick Access folder 1-10</td></tr>
+<tr><td>Click grid folder</td><td>Move file to that folder</td></tr>
+<tr><td><span class='key'>Tab</span></td><td>Enter grid keyboard navigation (arrows to move, Space to assign, Esc to exit)</td></tr>
+<tr><td><span class='key'>N</span></td><td>Add new folder to grid</td></tr>
+<tr><td>A-Z / # buttons</td><td>Sort grid alphabetically / by file count</td></tr>
+<tr><td>Full Paths toggle</td><td>Show folder path structure in grid buttons</td></tr>
+<tr><td>Width spinner</td><td>Adjust grid button width (80-300px)</td></tr>
+<tr class='section'><td colspan='2'>AI Mode</td></tr>
+<tr><td>AI Setup button</td><td>Configure provider, model, and sorting options</td></tr>
+<tr><td>Re-run AI button</td><td>Re-analyze unsorted or all files</td></tr>
+<tr><td>Semi mode</td><td>AI highlights suggested folders in grid + AI Suggestions bar</td></tr>
+<tr><td>AI Reasoning</td><td>Shows why the AI picked specific folders for the current file</td></tr>
+<tr><td>Confidence %</td><td>Color-coded certainty level on each suggestion</td></tr>
+<tr><td>Category review</td><td>Edit AI-proposed categories before they are created</td></tr>
 </table>
 <br>
-<b>Tip:</b> Use the search box to jump to a file by name. Right-click file name for more options.
+<b>Tip:</b> Use the File List to browse and multi-select files. In the review screen, type folder paths directly into the destination dropdown. Right-click folders for context menu. Use A-Z/#  to organize the grid. Switch themes from the launcher.
 )";
     
     help_dialog.setTextFormat(Qt::RichText);
@@ -2109,8 +2291,13 @@ void StandaloneFileTinderDialog::show_shortcuts_help() {
 void StandaloneFileTinderDialog::on_search(const QString& text) {
     if (text.isEmpty()) return;
     
-    // Find file matching search text in filtered list
-    for (int i = 0; i < static_cast<int>(filtered_indices_.size()); ++i) {
+    int count = static_cast<int>(filtered_indices_.size());
+    if (count == 0) return;
+    
+    // Search forward from the position after the current one, wrapping around
+    int start = (current_filtered_index_ + 1) % count;
+    for (int offset = 0; offset < count; ++offset) {
+        int i = (start + offset) % count;
         const auto& file = files_[filtered_indices_[i]];
         if (file.name.contains(text, Qt::CaseInsensitive)) {
             current_filtered_index_ = i;

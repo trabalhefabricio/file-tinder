@@ -25,6 +25,7 @@
 #include "DatabaseManager.hpp"
 #include "StandaloneFileTinderDialog.hpp"
 #include "AdvancedFileTinderDialog.hpp"
+#include "AiFileTinderDialog.hpp"
 #include "FileTinderExecutor.hpp"
 #include "AppLogger.hpp"
 #include "DiagnosticTool.hpp"
@@ -57,6 +58,11 @@ public:
         
         build_interface();
         
+        // Load theme preference
+        QSettings theme_settings("FileTinder", "FileTinder");
+        is_dark_theme_ = theme_settings.value("darkTheme", true).toBool();
+        apply_theme();
+        
         // Pre-fill last used folder if it still exists
         QSettings settings("FileTinder", "FileTinder");
         QString last_folder = settings.value("lastFolder").toString();
@@ -66,6 +72,14 @@ public:
             path_indicator_->setStyleSheet(
                 "padding: 8px 12px; background-color: #1a3a1a; border: 1px solid #2a5a2a; color: #88cc88;"
             );
+            
+            // Check for resumable session
+            int progress = db_manager_.get_session_progress_count(last_folder);
+            if (progress > 0 && resume_label_) {
+                resume_label_->setText(QString("Session in progress: %1 files sorted. Click a mode to resume.")
+                    .arg(progress));
+                resume_label_->setVisible(true);
+            }
         }
     }
     
@@ -74,7 +88,35 @@ private:
     QString chosen_path_;
     QLabel* path_indicator_;
     QListWidget* recent_list_ = nullptr;
+    QLabel* resume_label_ = nullptr;
     bool skip_stats_on_next_launch_ = false;  // Skip stats dashboard on mode switch
+    bool is_dark_theme_ = true;
+    
+    void apply_theme() {
+        QPalette p;
+        if (is_dark_theme_) {
+            p.setColor(QPalette::Window, QColor(45, 45, 45));
+            p.setColor(QPalette::WindowText, QColor(230, 230, 230));
+            p.setColor(QPalette::Base, QColor(35, 35, 35));
+            p.setColor(QPalette::AlternateBase, QColor(55, 55, 55));
+            p.setColor(QPalette::Text, QColor(230, 230, 230));
+            p.setColor(QPalette::Button, QColor(50, 50, 50));
+            p.setColor(QPalette::ButtonText, QColor(230, 230, 230));
+            p.setColor(QPalette::Highlight, QColor(0, 120, 212));
+            p.setColor(QPalette::HighlightedText, QColor(255, 255, 255));
+        } else {
+            p.setColor(QPalette::Window, QColor(240, 240, 240));
+            p.setColor(QPalette::WindowText, QColor(30, 30, 30));
+            p.setColor(QPalette::Base, QColor(255, 255, 255));
+            p.setColor(QPalette::AlternateBase, QColor(235, 235, 235));
+            p.setColor(QPalette::Text, QColor(30, 30, 30));
+            p.setColor(QPalette::Button, QColor(225, 225, 225));
+            p.setColor(QPalette::ButtonText, QColor(30, 30, 30));
+            p.setColor(QPalette::Highlight, QColor(0, 120, 212));
+            p.setColor(QPalette::HighlightedText, QColor(255, 255, 255));
+        }
+        QApplication::setPalette(p);
+    }
     
     bool eventFilter(QObject* obj, QEvent* event) override {
         if (recent_list_ && obj == recent_list_->viewport() && event->type() == QEvent::MouseButtonPress) {
@@ -178,6 +220,14 @@ private:
         
         root_layout->addStretch();
         
+        // Resume session indicator
+        resume_label_ = new QLabel();
+        resume_label_->setStyleSheet(
+            "padding: 8px 12px; background-color: #1a3a4a; border: 1px solid #2980b9; "
+            "color: #3498db; font-size: 11px; border-radius: 4px;");
+        resume_label_->setVisible(false);
+        root_layout->addWidget(resume_label_);
+        
         // Mode buttons
         auto* modes_label = new QLabel("Choose mode:");
         modes_label->setStyleSheet("font-weight: bold; font-size: 12px;");
@@ -204,6 +254,15 @@ private:
         connect(adv_mode_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_advanced);
         modes_row->addWidget(adv_mode_btn);
         
+        auto* ai_mode_btn = new QPushButton("AI Mode\n(AI-assisted sorting)");
+        ai_mode_btn->setMinimumSize(ui::scaling::scaled(180), ui::scaling::scaled(70));
+        ai_mode_btn->setStyleSheet(
+            "QPushButton { padding: 12px; background-color: #2980b9; color: white; border: none; font-size: 13px; }"
+            "QPushButton:hover { background-color: #1a6fa0; }"
+        );
+        connect(ai_mode_btn, &QPushButton::clicked, this, &FileTinderLauncher::launch_ai);
+        modes_row->addWidget(ai_mode_btn);
+        
         root_layout->addLayout(modes_row);
         
         // Tools row: Clear Session + Undo History + Diagnostics
@@ -227,6 +286,21 @@ private:
         
         tools_row->addStretch();
         
+        // Theme toggle button
+        auto* theme_btn = new QPushButton("Light Theme");
+        theme_btn->setStyleSheet(
+            "QPushButton { padding: 6px 12px; background-color: #4a4a4a; color: #cccccc; border: 1px solid #555555; }"
+            "QPushButton:hover { background-color: #555555; }"
+        );
+        connect(theme_btn, &QPushButton::clicked, this, [this, theme_btn]() {
+            is_dark_theme_ = !is_dark_theme_;
+            apply_theme();
+            theme_btn->setText(is_dark_theme_ ? "Light Theme" : "Dark Theme");
+            QSettings settings("FileTinder", "FileTinder");
+            settings.setValue("darkTheme", is_dark_theme_);
+        });
+        tools_row->addWidget(theme_btn);
+        
         auto* diag_btn = new QPushButton("Diagnostics");
         diag_btn->setStyleSheet(
             "QPushButton { padding: 6px 12px; background-color: #4a4a4a; color: #cccccc; border: 1px solid #555555; }"
@@ -238,7 +312,7 @@ private:
         root_layout->addLayout(tools_row);
         
         // Hotkey hint
-        auto* hint_text = new QLabel("Keys: Left=Delete | Down=Skip | Up=Back | Z=Undo | Basic: Right=Keep | Advanced: K=Keep, 1-0=Quick Access");
+        auto* hint_text = new QLabel("Keys: Left=Delete | Down=Skip | Z=Undo | F=File List | Basic: Right=Keep | Advanced/AI: K=Keep, 1-0=Quick Access, Tab=Grid Nav");
         hint_text->setStyleSheet("color: #666666; font-size: 10px; padding-top: 8px;");
         hint_text->setAlignment(Qt::AlignCenter);
         hint_text->setWordWrap(true);
@@ -266,7 +340,7 @@ private:
             return false;
         }
         
-        // Collect stats (show progress for large dirs)
+        // Collect file stats (show progress for large dirs)
         qint64 total_size = 0;
         int img_count = 0, vid_count = 0, aud_count = 0, doc_count = 0, arch_count = 0, other_count = 0;
         QMimeDatabase mime_db;
@@ -298,6 +372,10 @@ private:
         }
         delete progress;
         
+        // Collect subfolder info
+        QStringList subfolders = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        int folder_count = subfolders.size();
+        
         // Format size
         QString size_str;
         if (total_size < 1024LL) size_str = QString("%1 B").arg(total_size);
@@ -319,9 +397,9 @@ private:
         
         auto* summary = new QLabel(QString(
             "<div style='font-size: 14px; margin: 10px 0;'>"
-            "<b>%1 files</b> &middot; %2 total"
+            "<b>%1 files</b> &middot; %2 total &middot; <b>%3 subfolders</b>"
             "</div>"
-        ).arg(files.size()).arg(size_str));
+        ).arg(files.size()).arg(size_str).arg(folder_count));
         layout->addWidget(summary);
         
         // Type breakdown
@@ -345,6 +423,34 @@ private:
         add_row("Other", other_count, "#95a5a6");
         
         layout->addWidget(breakdown);
+        
+        // Folder section
+        if (folder_count > 0) {
+            auto* folder_widget = new QWidget();
+            folder_widget->setStyleSheet("background-color: #2c3e50; border-radius: 8px; padding: 10px;");
+            auto* folder_layout = new QVBoxLayout(folder_widget);
+            
+            auto* folder_header = new QLabel(QString(
+                "<span style='color: #ecf0f1; font-size: 13px; font-weight: bold;'>Subfolders (%1)</span>"
+            ).arg(folder_count));
+            folder_layout->addWidget(folder_header);
+            
+            // Show up to 10 subfolders, with "and N more..." if needed
+            int show_count = qMin(folder_count, 10);
+            QString folder_list;
+            for (int i = 0; i < show_count; ++i) {
+                folder_list += QString("<span style='color: #bdc3c7; font-size: 11px;'>  %1</span><br>").arg(subfolders[i]);
+            }
+            if (folder_count > 10) {
+                folder_list += QString("<span style='color: #95a5a6; font-size: 11px;'>  ...and %1 more</span>").arg(folder_count - 10);
+            }
+            auto* folder_list_label = new QLabel(folder_list);
+            folder_list_label->setWordWrap(true);
+            folder_layout->addWidget(folder_list_label);
+            
+            layout->addWidget(folder_widget);
+        }
+        
         layout->addStretch();
         
         auto* btn_layout = new QHBoxLayout();
@@ -403,6 +509,12 @@ private:
             QTimer::singleShot(0, this, &FileTinderLauncher::launch_advanced);
         });
         
+        connect(dlg, &StandaloneFileTinderDialog::switch_to_ai_mode, this, [this, dlg]() {
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_ai);
+        });
+        
         dlg->initialize();
         dlg->exec();
         dlg->deleteLater();
@@ -426,6 +538,41 @@ private:
             skip_stats_on_next_launch_ = true;
             // Defer mode switch to break recursive exec() chain
             QTimer::singleShot(0, this, &FileTinderLauncher::launch_basic);
+        });
+        
+        connect(dlg, &StandaloneFileTinderDialog::switch_to_ai_mode, this, [this, dlg]() {
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_ai);
+        });
+        
+        dlg->initialize();
+        dlg->exec();
+        dlg->deleteLater();
+    }
+    
+    void launch_ai() {
+        if (!validate_folder()) return;
+        if (skip_stats_on_next_launch_) {
+            skip_stats_on_next_launch_ = false;
+        } else {
+            if (!show_pre_session_stats()) return;
+        }
+        
+        LOG_INFO("Launcher", "Starting AI mode");
+        
+        auto* dlg = new AiFileTinderDialog(chosen_path_, db_manager_, this);
+        
+        connect(dlg, &AiFileTinderDialog::switch_to_basic_mode, this, [this, dlg]() {
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_basic);
+        });
+        
+        connect(dlg, &AiFileTinderDialog::switch_to_advanced_mode, this, [this, dlg]() {
+            dlg->done(QDialog::Accepted);
+            skip_stats_on_next_launch_ = true;
+            QTimer::singleShot(0, this, &FileTinderLauncher::launch_advanced);
         });
         
         dlg->initialize();
@@ -535,7 +682,7 @@ private:
                 
                 if (FileTinderExecutor::undo_action(entry)) {
                     undo_btn->setEnabled(false);
-                    undo_btn->setText("Done ✓");
+                    undo_btn->setText("Done");
                     action_item->setText(action + " (undone)");
                     db_manager_.remove_execution_log_entry(id);
                     LOG_INFO("UndoHistory", QString("Undone: %1 %2").arg(action, src));

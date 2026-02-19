@@ -21,22 +21,23 @@ public:
     
     void initialize() override;
     
+protected:
+    // Advanced mode components accessible to derived classes (AI Mode)
+    MindMapView* mind_map_view_;
+    QListWidget* quick_access_list_;
+    FolderTreeModel* folder_model_;
+
 private:
-    // Advanced mode components
+    // Advanced mode internal components
     QScrollArea* scroll_area_;
     QWidget* main_content_;
-    MindMapView* mind_map_view_;
     QWidget* file_info_panel_;
     QLabel* adv_file_icon_label_;
     QLabel* file_name_label_;
     QLabel* file_details_label_;
     QLabel* adv_preview_label_;     // Small inline image preview
     QWidget* quick_access_panel_;
-    QListWidget* quick_access_list_;
     FilterWidget* filter_widget_;
-    
-    // Folder tree model
-    FolderTreeModel* folder_model_;
     
     // Quick access management
     QStringList quick_access_folders_;
@@ -82,7 +83,13 @@ private:
     // Override actions
     void on_finish() override;
     void on_undo() override;
+
+protected:
+    // show_current_file accessible to AI mode for override chaining
     void show_current_file() override;
+
+private:
+    // Event handlers
     void closeEvent(QCloseEvent* event) override;
     void reject() override;
     bool eventFilter(QObject* obj, QEvent* event) override;
